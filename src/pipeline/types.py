@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from typing import TypeAlias
+from typing import TypeVar
 
 import polars as pl
 
-FrameT: TypeAlias = pl.DataFrame | pl.LazyFrame
+FrameT = TypeVar("FrameT", pl.DataFrame, pl.LazyFrame)

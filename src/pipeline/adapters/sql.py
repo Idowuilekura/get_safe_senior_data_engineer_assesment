@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING, Literal
 
 import polars as pl
 from sqlalchemy import create_engine
@@ -8,6 +9,9 @@ from sqlalchemy.engine import Engine
 
 from pipeline.config import DatabaseWriteEngine
 from pipeline.ports.database import DatabaseWriter, WriteRequest
+
+if TYPE_CHECKING:
+    from polars._typing import DbWriteMode
 
 logger = logging.getLogger(__name__)
 
@@ -34,17 +38,27 @@ class SqlAlchemyPolarsWriter(DatabaseWriter):
         lf: pl.LazyFrame,
         request: WriteRequest,
     ) -> int:
-        dataframe = lf.collect(streaming=True)
+        dataframe = lf.collect(engine="streaming")
         if dataframe.is_empty():
-            logger.info("No rows available for target '%s'. Skipping database write.", request.target_name)
+            logger.info(
+                "No rows available for target '%s'. Skipping database write.", request.target_name
+            )
             return 0
 
-        if request.mode in {"replace", "append"}:
+        if request.mode == "replace":
             return self._write_dataframe(
                 dataframe=dataframe,
                 target_name=request.target_name,
                 batch_size=request.batch_size,
-                initial_mode=request.mode,
+                initial_mode="replace",
+            )
+
+        if request.mode == "append":
+            return self._write_dataframe(
+                dataframe=dataframe,
+                target_name=request.target_name,
+                batch_size=request.batch_size,
+                initial_mode="append",
             )
 
         raise ValueError(
@@ -57,12 +71,12 @@ class SqlAlchemyPolarsWriter(DatabaseWriter):
         dataframe: pl.DataFrame,
         target_name: str,
         batch_size: int,
-        initial_mode: str,
+        initial_mode: Literal["replace", "append"],
     ) -> int:
         total_rows_written = 0
 
         for batch_index, batch_df in enumerate(dataframe.iter_slices(n_rows=batch_size)):
-            write_mode = initial_mode if batch_index == 0 else "append"
+            write_mode: DbWriteMode = initial_mode if batch_index == 0 else "append"
             total_rows_written += self._write_batch(
                 df=batch_df,
                 table_name=target_name,
@@ -94,7 +108,7 @@ class SqlAlchemyPolarsWriter(DatabaseWriter):
         self,
         df: pl.DataFrame,
         table_name: str,
-        mode: str,
+        mode: DbWriteMode,
     ) -> int:
         rows_written = df.write_database(
             table_name=table_name,

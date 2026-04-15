@@ -11,7 +11,9 @@ from pipeline.utils.metadata import write_metadata_file
 from pipeline.utils.partitions import enrich_time_features, extract_year_month_globs
 
 
-def get_pending_bronze_partitions(metadata: dict[str, Any] | None) -> dict[str, dict[str, list[int]]]:
+def get_pending_bronze_partitions(
+    metadata: dict[str, Any] | None,
+) -> dict[str, dict[str, list[int]]]:
     if not metadata:
         return {}
 

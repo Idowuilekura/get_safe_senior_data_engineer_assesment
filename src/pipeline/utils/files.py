@@ -28,11 +28,7 @@ def is_matching_file(
     dataset_type: str,
     ext_type: str,
 ) -> bool:
-    return (
-        insur_type in filename
-        and dataset_type in filename
-        and filename.endswith(ext_type)
-    )
+    return insur_type in filename and dataset_type in filename and filename.endswith(ext_type)
 
 
 def sort_files_by_date(files: list[str], ext_type: str) -> list[str]:

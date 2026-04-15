@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import polars as pl
@@ -12,6 +12,9 @@ from pipeline.utils.files import list_source_files
 from pipeline.utils.metadata import try_read_metadata_file, write_metadata_file
 from pipeline.utils.partitions import enrich_timestamp, find_missing_days, get_days_month_df
 from pipeline.utils.schema import deserialize_schema, serialize_schema
+
+if TYPE_CHECKING:
+    from polars._typing import SchemaDict
 
 BRONZE_PARTITION_SCHEMA = ds.partitioning(
     pa.schema(
@@ -31,7 +34,7 @@ def files_to_read(
     insur_type: str = "premium",
     dataset_type: str = "transaction",
     ext_type: str = ".json",
-) -> tuple[dict[str, Any] | None, dict[str, pl.DataType] | None, list[str]]:
+) -> tuple[dict[str, Any] | None, SchemaDict | None, list[str]]:
     source_files = list_source_files(
         directory_path=data_folder,
         insur_type=insur_type,
@@ -55,14 +58,13 @@ def files_to_read(
 
 def read_data_jsons(
     file_paths: list[str],
-    schema: dict[str, pl.DataType] | None = None,
+    schema: SchemaDict | None = None,
 ) -> pl.LazyFrame | None:
     if not file_paths:
         return None
 
     dataframes = [
-        pl.read_json(path, schema=schema) if schema else pl.read_json(path)
-        for path in file_paths
+        pl.read_json(path, schema=schema) if schema else pl.read_json(path) for path in file_paths
     ]
     return pl.concat(dataframes).lazy()
 
@@ -74,7 +76,7 @@ def read_all_files(
     insur_type: str = "premium",
     dataset_type: str = "transaction",
     ext_type: str = ".json",
-) -> tuple[pl.LazyFrame | None, dict[str, Any] | None, dict[str, pl.DataType] | None, list[str]]:
+) -> tuple[pl.LazyFrame | None, dict[str, Any] | None, SchemaDict | None, list[str]]:
     metadata_dict, old_schema, files_list_read = files_to_read(
         data_folder=data_folder,
         metadata_folder_path=metadata_folder_path,

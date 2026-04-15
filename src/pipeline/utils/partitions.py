@@ -22,11 +22,7 @@ def enrich_timestamp(df: pl.LazyFrame, time_column: str, new_time_column: str) -
 
 
 def get_days_month_df(df: pl.LazyFrame) -> dict[int, dict[int, list[int]]]:
-    years_months_days = (
-        df.select(["year", "month", "day"])
-        .unique()
-        .sort(["year", "month", "day"])
-    )
+    years_months_days = df.select(["year", "month", "day"]).unique().sort(["year", "month", "day"])
 
     result: dict[int, dict[int, list[int]]] = {}
 
@@ -77,10 +73,7 @@ def enrich_time_features(df: FrameT, time_column: str) -> FrameT:
             timestamp_column.dt.week().alias("week_of_year"),
             (
                 (timestamp_column.dt.month() == 12)
-                | (
-                    (timestamp_column.dt.month() == 1)
-                    & (timestamp_column.dt.day() <= 7)
-                )
+                | ((timestamp_column.dt.month() == 1) & (timestamp_column.dt.day() <= 7))
             ).alias("is_festive_season"),
         ]
     )

@@ -25,9 +25,13 @@ def load_pipeline_config_from_env(environment: Mapping[str, str] | None = None) 
     return PipelineConfig(
         data_folder_path=env.get("PIPELINE_DATA_FOLDER_PATH", DEFAULT_DATA_FOLDER_PATH),
         bronze_output_path=env.get("PIPELINE_BRONZE_OUTPUT_PATH", DEFAULT_BRONZE_OUTPUT_PATH),
-        bronze_metadata_file_name=env.get("PIPELINE_BRONZE_METADATA_FILE_NAME", DEFAULT_METADATA_FILE_NAME),
+        bronze_metadata_file_name=env.get(
+            "PIPELINE_BRONZE_METADATA_FILE_NAME", DEFAULT_METADATA_FILE_NAME
+        ),
         silver_metadata_path=env.get("PIPELINE_SILVER_METADATA_PATH", DEFAULT_SILVER_METADATA_PATH),
-        silver_metadata_file_name=env.get("PIPELINE_SILVER_METADATA_FILE_NAME", DEFAULT_METADATA_FILE_NAME),
+        silver_metadata_file_name=env.get(
+            "PIPELINE_SILVER_METADATA_FILE_NAME", DEFAULT_METADATA_FILE_NAME
+        ),
         database_connection_uri=resolve_database_connection_uri_from_env(env),
         table_name=env.get("PIPELINE_TABLE_NAME", DEFAULT_TARGET_TABLE),
         database_backend=env.get("PIPELINE_DATABASE_BACKEND", "auto"),
@@ -88,4 +92,4 @@ def _read_write_engine(environment: Mapping[str, str]) -> DatabaseWriteEngine:
     if raw_value not in {"sqlalchemy", "adbc"}:
         raise ValueError("PIPELINE_DATABASE_WRITE_ENGINE must be 'sqlalchemy' or 'adbc'.")
 
-    return raw_value
+    return "adbc" if raw_value == "adbc" else "sqlalchemy"

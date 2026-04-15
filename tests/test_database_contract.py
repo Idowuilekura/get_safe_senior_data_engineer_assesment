@@ -1,9 +1,9 @@
 import pytest
 
-from pipeline.config import PipelineConfig
 from pipeline.adapters.factory import DatabaseWriterFactory
 from pipeline.adapters.postgres import PostgresPolarsWriter
 from pipeline.adapters.sql import SqlAlchemyPolarsWriter
+from pipeline.config import PipelineConfig
 from pipeline.ports.database import WriteRequest
 
 

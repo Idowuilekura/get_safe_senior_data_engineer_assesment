@@ -33,9 +33,7 @@ def test_write_raw_data_bronze_out_appends_new_files_within_existing_month(tmp_p
     )
 
     bronze_df = (
-        pl.scan_parquet(str(tmp_path / "year=2024" / "month=1" / "*.parquet"))
-        .sort("id")
-        .collect()
+        pl.scan_parquet(str(tmp_path / "year=2024" / "month=1" / "*.parquet")).sort("id").collect()
     )
 
     assert bronze_df["id"].to_list() == [1, 2]

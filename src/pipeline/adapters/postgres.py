@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import uuid
 from contextlib import contextmanager
-from typing import Iterator, Sequence
+from typing import TYPE_CHECKING, Iterator, Sequence
 
 import polars as pl
 from sqlalchemy import inspect, text
@@ -11,6 +11,9 @@ from sqlalchemy import inspect, text
 from pipeline.adapters.sql import SqlAlchemyPolarsWriter
 from pipeline.config import DatabaseWriteEngine
 from pipeline.ports.database import WriteRequest
+
+if TYPE_CHECKING:
+    from polars._typing import DbWriteMode
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +45,11 @@ class PostgresPolarsWriter(SqlAlchemyPolarsWriter):
         lf: pl.LazyFrame,
         request: WriteRequest,
     ) -> int:
-        dataframe = lf.collect(streaming=True)
+        dataframe = lf.collect(engine="streaming")
         if dataframe.is_empty():
-            logger.info("No rows available for target '%s'. Skipping database write.", request.target_name)
+            logger.info(
+                "No rows available for target '%s'. Skipping database write.", request.target_name
+            )
             return 0
 
         if request.mode == "replace":
@@ -70,7 +75,10 @@ class PostgresPolarsWriter(SqlAlchemyPolarsWriter):
         batch_size: int,
     ) -> int:
         if not self._table_exists(target_name):
-            logger.info("Target '%s' does not exist. Falling back to replace write before future upserts.", target_name)
+            logger.info(
+                "Target '%s' does not exist. Falling back to replace write before future upserts.",
+                target_name,
+            )
             return self._replace_dataframe(
                 dataframe=dataframe,
                 target_name=target_name,
@@ -82,7 +90,7 @@ class PostgresPolarsWriter(SqlAlchemyPolarsWriter):
         try:
             total_rows_written = 0
             for batch_index, batch_df in enumerate(dataframe.iter_slices(n_rows=batch_size)):
-                staging_mode = "replace" if batch_index == 0 else "append"
+                staging_mode: DbWriteMode = "replace" if batch_index == 0 else "append"
                 total_rows_written += self._write_batch(
                     df=batch_df,
                     table_name=staging_table,
@@ -97,7 +105,10 @@ class PostgresPolarsWriter(SqlAlchemyPolarsWriter):
             )
 
             logger.info(
-                "Completed upsert write for target '%s' using staging table '%s'. Rows processed=%s",
+                (
+                    "Completed upsert write for target '%s' using staging table '%s'. "
+                    "Rows processed=%s"
+                ),
                 target_name,
                 staging_table,
                 total_rows_written,

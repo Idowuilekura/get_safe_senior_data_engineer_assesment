@@ -34,7 +34,11 @@ class DatabaseWriterFactory:
     def _resolve_backend(config: PipelineConfig) -> str:
         if config.database_backend != "auto":
             normalized_backend = config.database_backend.lower()
-            return "postgres" if normalized_backend in {"postgres", "postgresql"} else normalized_backend
+            return (
+                "postgres"
+                if normalized_backend in {"postgres", "postgresql"}
+                else normalized_backend
+            )
 
         dialect = config.database_connection_uri.split("://", 1)[0].split("+", 1)[0].lower()
         return "postgres" if dialect in {"postgres", "postgresql"} else "sqlalchemy"

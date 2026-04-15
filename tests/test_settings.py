@@ -1,7 +1,9 @@
 import pytest
 
-from pipeline.settings import load_pipeline_config_from_env
-from pipeline.settings import resolve_database_connection_uri_from_env
+from pipeline.settings import (
+    load_pipeline_config_from_env,
+    resolve_database_connection_uri_from_env,
+)
 
 
 def test_load_pipeline_config_from_env_uses_database_connection_uri() -> None:
@@ -11,7 +13,10 @@ def test_load_pipeline_config_from_env_uses_database_connection_uri() -> None:
         }
     )
 
-    assert config.database_connection_uri == "postgresql+psycopg://postgres:postgres@localhost:5432/mydb"
+    assert (
+        config.database_connection_uri
+        == "postgresql+psycopg://postgres:postgres@localhost:5432/mydb"
+    )
 
 
 def test_load_pipeline_config_from_env_parses_merge_keys() -> None:

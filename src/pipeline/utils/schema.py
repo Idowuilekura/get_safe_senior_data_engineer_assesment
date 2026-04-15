@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import polars as pl
 
-_POLARS_DTYPE_MAP: dict[str, pl.DataType] = {
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
+
+_POLARS_DTYPE_MAP: dict[str, PolarsDataType] = {
     "Int8": pl.Int8,
     "Int16": pl.Int16,
     "Int32": pl.Int32,
@@ -30,11 +33,11 @@ def serialize_schema(schema: dict[str, Any] | None) -> dict[str, str] | None:
     return {column: str(dtype) for column, dtype in schema.items()}
 
 
-def deserialize_schema(schema_dict: dict[str, str] | None) -> dict[str, pl.DataType] | None:
+def deserialize_schema(schema_dict: dict[str, str] | None) -> dict[str, PolarsDataType] | None:
     if not schema_dict:
         return None
 
-    schema: dict[str, pl.DataType] = {}
+    schema: dict[str, PolarsDataType] = {}
 
     for column, dtype_name in schema_dict.items():
         normalized_dtype = dtype_name.split("(")[0]

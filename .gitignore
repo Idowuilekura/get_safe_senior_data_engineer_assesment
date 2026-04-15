@@ -88,7 +88,7 @@ data/
 *.sqlite3
 *.log
 
-# Secrets and key material
+# Secrets and environment files
 *.pem
 *.key
 *.secret

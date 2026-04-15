@@ -33,7 +33,9 @@ def run_pipeline(
     bronze_metadata_result: dict[str, Any] | None = None
 
     if bronze_df is not None:
-        logger.info("New raw files detected. Running bronze write for %s file(s).", len(files_list_read))
+        logger.info(
+            "New raw files detected. Running bronze write for %s file(s).", len(files_list_read)
+        )
         bronze_metadata_result = write_raw_data_bronze_out(
             df=bronze_df,
             metadata_dict=existing_bronze_metadata,
