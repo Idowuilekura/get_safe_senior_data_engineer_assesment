@@ -101,7 +101,7 @@ def test_sqlalchemy_writer_falls_back_to_batch_height_when_driver_reports_unknow
         connection_uri=f"sqlite:///{database_path}",
     )
 
-    def fake_write_database(self, **kwargs):  # type: ignore[no-untyped-def]
+    def fake_write_database(self: pl.DataFrame, **kwargs: object) -> int:
         return -1
 
     monkeypatch.setattr(pl.DataFrame, "write_database", fake_write_database)
