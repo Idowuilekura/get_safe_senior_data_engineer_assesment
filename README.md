@@ -10,6 +10,7 @@ This repository implements a batch data pipeline for insurance premium transacti
 - [Business Context](#business-context)
 - [Problem Statement](#problem-statement)
 - [Input Data](#input-data)
+- [File Naming and Timestamp Rules](#file-naming-and-timestamp-rules)
 - [Expected Output](#expected-output)
 - [Architecture](#architecture)
 - [Technology Choices](#technology-choices)
@@ -85,6 +86,67 @@ Relevant fields:
 - `status`: transaction outcome or processing status
 
 This repository also contains additional sample JSON files in `data/` to exercise incremental load behavior, duplicate handling, and rerun safety.
+
+## File Naming and Timestamp Rules
+
+File naming is intentionally treated as a weak operational hint, not as a reliable business contract.
+
+### Raw file naming
+
+By default, the Python ingestion layer looks for files that:
+
+- contain `premium` in the filename
+- contain `transaction` in the filename
+- end in `.json`
+
+Those defaults come from the runtime configuration:
+
+- `PIPELINE_INSUR_TYPE=premium`
+- `PIPELINE_DATASET_TYPE=transaction`
+- `PIPELINE_EXT_TYPE=.json`
+
+Example matching filenames:
+
+- `premium_transactions_data_20250306.json`
+- `premium_transaction_2025_03_06.json`
+- `partner_premium_transaction_dump_20250306.json`
+
+The pipeline can attempt to extract a file date from either of these filename patterns:
+
+- `YYYYMMDD`
+- `YYYY_MM_DD`
+
+However, filename dates are not treated as the authoritative event date. During the exercise, it became clear that filename usage was not fully consistent, which makes it risky to treat the filename itself as a trusted business field. In practice, filenames may be inconsistent, copied, renamed, or otherwise unsuitable as a stable semantic contract.
+
+For that reason:
+
+- `created_at` inside the JSON payload is the primary source of truth for event time and partitioning
+- filename date parsing is only a fallback when payload timestamps are unavailable
+- file discovery uses broad substring matching for ingestion, but reporting logic should not depend on filename structure beyond that
+- historic backfill behavior is driven first by payload timestamps, not by a strict expectation that the filename alone is correct
+
+Operational assumption:
+
+- when a filename contains a parseable date, it is treated as a best-effort hint rather than guaranteed truth
+- that hint is used only when the payload does not provide usable timestamps
+- this assumption exists because the filename appears intended to communicate timing, even though the observed naming pattern is not consistent enough to rely on by itself
+
+### Dataset and model naming
+
+The solution follows a fairly standard analytics naming style:
+
+- raw operational dataset loaded by the ETL: `premium_transaction`
+- exported gold reporting relation: `fct_monthly_partner_premium`
+- exported CSV file: `output/gold/fct_monthly_partner_premium.csv`
+
+Within the dbt layer:
+
+- `bronze_` models preserve source-facing shape
+- `silver_` models represent trusted and quality-classified transaction data
+- `fct_` models represent reporting facts
+- `dim_` models represent reporting dimensions
+
+This makes it easier to understand which tables are operational landing artifacts versus finance-ready insurance reporting outputs.
 
 ## Expected Output
 
