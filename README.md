@@ -10,6 +10,7 @@ This repository implements a batch data pipeline for insurance premium transacti
 - [Business Context](#business-context)
 - [Problem Statement](#problem-statement)
 - [Input Data](#input-data)
+- [File Naming and Timestamp Rules](#file-naming-and-timestamp-rules)
 - [Expected Output](#expected-output)
 - [Architecture](#architecture)
 - [Technology Choices](#technology-choices)
@@ -86,6 +87,67 @@ Relevant fields:
 
 This repository also contains additional sample JSON files in `data/` to exercise incremental load behavior, duplicate handling, and rerun safety.
 
+## File Naming and Timestamp Rules
+
+File naming is intentionally treated as a weak operational hint, not as a reliable business contract.
+
+### Raw file naming
+
+By default, the Python ingestion layer looks for files that:
+
+- contain `premium` in the filename
+- contain `transaction` in the filename
+- end in `.json`
+
+Those defaults come from the runtime configuration:
+
+- `PIPELINE_INSUR_TYPE=premium`
+- `PIPELINE_DATASET_TYPE=transaction`
+- `PIPELINE_EXT_TYPE=.json`
+
+Example matching filenames:
+
+- `premium_transactions_data_20250306.json`
+- `premium_transaction_2025_03_06.json`
+- `partner_premium_transaction_dump_20250306.json`
+
+The pipeline can attempt to extract a file date from either of these filename patterns:
+
+- `YYYYMMDD`
+- `YYYY_MM_DD`
+
+However, filename dates are not treated as the authoritative event date. During the exercise, it became clear that filename usage was not fully consistent, which makes it risky to treat the filename itself as a trusted business field. In practice, filenames may be inconsistent, copied, renamed, or otherwise unsuitable as a stable semantic contract.
+
+For that reason:
+
+- `created_at` inside the JSON payload is the primary source of truth for event time and partitioning
+- filename date parsing is only a fallback when payload timestamps are unavailable
+- file discovery uses broad substring matching for ingestion, but reporting logic should not depend on filename structure beyond that
+- filename dates are treated as an operational hint only, for example when a producer appears to intend a date in the file name but the naming itself is not reliable enough to stand alone
+
+Operational assumption:
+
+- when a filename contains a parseable date, it is treated as a best-effort hint rather than guaranteed truth
+- that hint is used only when the payload does not provide usable timestamps
+- this assumption exists because the filename appears intended to communicate timing, even though the observed naming pattern is not consistent enough to rely on by itself
+
+### Dataset and model naming
+
+The solution follows a fairly standard analytics naming style:
+
+- raw operational dataset loaded by the ETL: `premium_transaction`
+- exported gold reporting relation: `fct_monthly_partner_premium`
+- exported CSV file: `output/gold/fct_monthly_partner_premium.csv`
+
+Within the dbt layer:
+
+- `bronze_` models preserve source-facing shape
+- `silver_` models represent trusted and quality-classified transaction data
+- `fct_` models represent reporting facts
+- `dim_` models represent reporting dimensions
+
+This makes it easier to understand which tables are operational landing artifacts versus finance-ready insurance reporting outputs.
+
 ## Expected Output
 
 The required deliverables from the case study are covered here as follows:
@@ -153,12 +215,12 @@ dbt is used for the reporting layer because it provides:
 ```text
 premium_pipeline_project_updated/
 ├── analytics_premium/
+│   ├── infra/
+│   │   └── docker/
 │   ├── models/
 │   │   ├── bronze/
 │   │   ├── silver/
 │   │   └── gold/
-│   ├── Dockerfile
-│   ├── docker-compose.yml
 │   └── README.md
 ├── data/
 │   └── premium_transactions_data_*.json
@@ -197,7 +259,10 @@ Key components:
 - `src/pipeline/adapters/`: generic SQL and Postgres-specific write implementations
 - `src/pipeline/orchestration.py`: end-to-end ETL orchestration
 - `src/export_dlt/db_file_export.py`: export of monthly premium report to CSV
-- `analytics_premium/models/gold/`: gold reporting models, including `fct_monthly_partner_premium`
+- `analytics_premium/models/bronze/bronze_transaction.sql`: source-faithful analytics bronze model
+- `analytics_premium/models/silver/`: accepted, rejected, and quality-classified transaction models
+- `analytics_premium/models/gold/`: dimensional reporting models, including `fct_monthly_partner_premium`
+- `analytics_premium/infra/docker/`: dbt container build and runtime assets
 
 ## Pipeline Stages
 
@@ -235,6 +300,27 @@ Current behavior:
 - builds dimensional and fact-style reporting models
 - publishes `fct_monthly_partner_premium` for finance reporting
 - supports CSV export for the case-study deliverable
+
+Current dbt model layout:
+
+- Bronze:
+  `bronze_transaction`
+- Silver:
+  `silver_transaction_quality`
+  `silver_transaction`
+  `silver_transaction_rejected`
+- Gold:
+  `dim_partner`
+  `dim_date`
+  `fct_transaction`
+  `fct_monthly_partner_premium`
+
+Design choices in the dbt layer:
+
+- Bronze remains source-faithful rather than applying business-quality filtering too early
+- Silver owns the accepted versus rejected split
+- rejected records are kept in `silver_transaction_rejected` to preserve an auditable path without overbuilding a separate quarantine layer for the take-home
+- Gold is dimensional and reporting-friendly, with a transaction fact plus the monthly finance reconciliation aggregate
 
 ### Metadata and Traceability
 
@@ -356,12 +442,67 @@ docker run --rm \
 
 The dbt project in `analytics_premium/` builds the reporting layer on top of the loaded transaction data.
 
+Modeling approach:
+
+- `bronze_transaction` keeps the raw source shape while adding deterministic lineage keys
+- `silver_transaction_quality` classifies quality issues including:
+  - null `transaction_id`
+  - duplicate `transaction_id`
+  - duplicate `sur_key`
+  - missing `charged_partner`
+  - missing `created_at_timestamp`
+- `silver_transaction` keeps only accepted rows
+- `silver_transaction_rejected` keeps rejected rows plus rejection metadata
+- `fct_transaction` preserves transaction grain for downstream reuse
+- `fct_monthly_partner_premium` produces the finance-facing monthly premium rollup by partner from trusted silver data, filtered to `status = 'processed'`
+
+This structure was chosen to keep the project compact but still senior in shape:
+
+- source-faithful Bronze
+- explicit quality handling in Silver
+- auditable rejected path
+- dimensional, reporting-ready Gold
+
+Testing in the dbt layer includes:
+
+- null and uniqueness checks
+- relationship tests
+- accepted-versus-rejected reconciliation checks
+- no-overlap checks on accepted and rejected `sur_key`
+- uniqueness of `(partner, month)` in `fct_monthly_partner_premium`
+
+All dbt Docker assets live under:
+
+```text
+analytics_premium/infra/docker/
+```
+
+That directory contains:
+
+- `Dockerfile`
+- `docker-entrypoint.sh`
+- `docker-compose.yml`
+- `render_profiles.py`
+- `build-image.sh`
+- `.env.example`
+
+Container design decisions:
+
+- non-root runtime user
+- minimal runtime image
+- adapter-aware builds via `DBT_ADAPTER_PACKAGE`, `DBT_ADAPTER_VERSION`, and `DBT_TYPE`
+- runtime dbt profile rendered from environment variables
+- source database, schema, and table can be swapped without changing versioned YAML
+- Compose is image-first and pull-oriented
+- default container command is `dbt run`
+- `DBT_DEFAULT_SELECT` can narrow the default run target
+
 Run with Docker Compose:
 
 ```bash
 cd analytics_premium
-cp .env.example .env
-docker compose run --rm dbt
+cp infra/docker/.env.example infra/docker/.env
+docker compose -f infra/docker/docker-compose.yml run --rm dbt
 ```
 
 Default target:
@@ -371,6 +512,14 @@ dbt run --select +fct_monthly_partner_premium
 ```
 
 This modeling layer makes data quality handling explicit by separating accepted and rejected transactions, which is especially useful in insurance finance workflows where reconciliations must remain explainable.
+
+Latest local dbt validation during development:
+
+```bash
+uv run dbt build --full-refresh
+```
+
+The reported result from the latest local validation was `43/43` green.
 
 ## Quality and CI
 
@@ -389,11 +538,13 @@ GitHub Actions runs the same quality gates from `.github/workflows/ci.yml`.
 ## Assumptions
 
 - More JSON files may arrive over time, not just one file.
-- Raw files are expected to include year, month, and day in the filename.
-- Historic files are treated as valid backfill for the period implied by their filename and payload timestamps.
+- Files must be discoverable by the configured ingestion pattern. With the current defaults, that means the filename must contain `premium`, contain `transaction`, and end in `.json`.
+- Event-time handling relies primarily on parseable `created_at` values in the JSON payload. A parseable filename date is only a fallback when payload timestamps are unavailable.
+- A date embedded in the filename is treated as a fallback operational hint, not as authoritative business data. This is a deliberate assumption because the naming pattern observed in the exercise was not consistent enough to be trusted on its own.
 - Source files are assumed to be stable after landing, though the current implementation still detects changed files and refreshes affected bronze partitions when necessary.
-- Some rows may be malformed, incomplete, or invalid. The current design already distinguishes accepted and rejected paths in the analytics layer, and a fuller quarantine-plus-alerting path would be the next production hardening step.
-- Schema drift is not the primary target for this version. The pipeline preserves and reuses known schema state and is intended to surface added columns rather than silently masking them.
+- Some records may be incomplete or invalid from a business-quality perspective. The analytics layer already separates accepted and rejected transaction paths, but this is not yet a full quarantine-and-alerting workflow.
+- Schema drift is not a primary target for this version. The pipeline persists prior schema metadata and reuses it on incremental reads, but it does not yet implement a full schema-evolution and notification workflow.
+- Missing-day tracking is intentionally capped for the current calendar month. The pipeline reports gaps only up to today's day-of-month and does not mark future days in the current month as missing.
 - Polars is preferred over Spark for the current scale to keep execution simpler and cheaper without sacrificing correctness.
 - The business reporting grain is monthly total premium per insurance partner, using the first day of the month as the month key.
 
