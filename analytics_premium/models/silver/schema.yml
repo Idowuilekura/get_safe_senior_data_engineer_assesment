@@ -1,0 +1,44 @@
+version: 2
+
+models:
+  - name: silver_transaction
+    tests:
+      - accepted_rejected_row_counts_match:
+          base_model: ref('bronze_transaction')
+          rejected_model: ref('silver_transaction_rejected')
+      - no_overlap_with:
+          compare_model: ref('silver_transaction_rejected')
+          key_column: sur_key
+    columns:
+      - name: sur_key
+        tests:
+          - not_null
+          - unique
+      - name: transaction_id
+        tests:
+          - not_null
+          - unique
+      - name: charged_partner
+        tests:
+          - not_null
+      - name: created_at_timestamp
+        tests:
+          - not_null
+
+  - name: silver_transaction_rejected
+    columns:
+      - name: sur_key
+        tests:
+          - not_null
+      - name: transaction_id_occurrences
+        tests:
+          - not_null
+      - name: sur_key_occurrences
+        tests:
+          - not_null
+      - name: is_rejected
+        tests:
+          - not_null
+      - name: rejection_reason
+        tests:
+          - not_null

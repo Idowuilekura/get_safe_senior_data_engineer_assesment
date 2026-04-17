@@ -1,0 +1,66 @@
+version: 2
+
+models:
+  - name: dim_partner
+    columns:
+      - name: partner_sk
+        tests:
+          - not_null
+          - unique
+      - name: partner_name
+        tests:
+          - not_null
+          - unique
+
+  - name: dim_date
+    columns:
+      - name: date_sk
+        tests:
+          - not_null
+          - unique
+      - name: full_date
+        tests:
+          - not_null
+          - unique
+
+  - name: fct_transaction
+    columns:
+      - name: transaction_sk
+        tests:
+          - not_null
+          - unique
+      - name: transaction_id
+        tests:
+          - not_null
+      - name: partner_sk
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_partner')
+              field: partner_sk
+      - name: date_sk
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_sk
+      - name: amount
+        tests:
+          - not_null
+
+  - name: fct_monthly_partner_premium
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - partner
+            - month
+    columns:
+      - name: partner
+        tests:
+          - not_null
+      - name: month
+        tests:
+          - not_null
+      - name: total_premium
+        tests:
+          - not_null
