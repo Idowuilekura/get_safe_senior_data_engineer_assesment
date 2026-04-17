@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Sequence
 
 import polars as pl
 
 from pipeline.config import DEFAULT_TARGET_TABLE
 from pipeline.ports.database import DatabaseWriter, WriteRequest
+from pipeline.types import DatabaseWriteMode, MetadataDict
 from pipeline.utils.metadata import write_metadata_file
 from pipeline.utils.partitions import enrich_time_features, extract_year_month_globs
 
 
 def get_pending_bronze_partitions(
-    metadata: dict[str, Any] | None,
+    metadata: MetadataDict | None,
 ) -> dict[str, dict[str, list[int]]]:
     if not metadata:
         return {}
@@ -21,14 +22,14 @@ def get_pending_bronze_partitions(
     return pending_partitions if pending_partitions else {}
 
 
-def has_pending_bronze_partitions(metadata: dict[str, Any] | None) -> bool:
+def has_pending_bronze_partitions(metadata: MetadataDict | None) -> bool:
     return bool(get_pending_bronze_partitions(metadata))
 
 
 def resolve_silver_metadata_source(
-    current_bronze_metadata: dict[str, Any] | None,
-    existing_bronze_metadata: dict[str, Any] | None,
-) -> dict[str, Any] | None:
+    current_bronze_metadata: MetadataDict | None,
+    existing_bronze_metadata: MetadataDict | None,
+) -> MetadataDict | None:
     if has_pending_bronze_partitions(current_bronze_metadata):
         return current_bronze_metadata
 
@@ -39,10 +40,10 @@ def resolve_silver_metadata_source(
 
 
 def build_silver_lazyframe_from_bronze(
-    bronze_metadata: dict[str, Any],
+    bronze_metadata: MetadataDict,
     bronze_output_path: str,
     time_column: str = "created_at_timestamp",
-    write_mode: str = "replace",
+    write_mode: DatabaseWriteMode = "replace",
 ) -> pl.LazyFrame | None:
     parquet_paths = resolve_bronze_parquet_paths(
         bronze_metadata=bronze_metadata,
@@ -57,9 +58,9 @@ def build_silver_lazyframe_from_bronze(
 
 
 def resolve_bronze_parquet_paths(
-    bronze_metadata: dict[str, Any] | None,
+    bronze_metadata: MetadataDict | None,
     bronze_output_path: str,
-    write_mode: str = "replace",
+    write_mode: DatabaseWriteMode = "replace",
 ) -> list[str]:
     pending_partitions = get_pending_bronze_partitions(bronze_metadata)
     if not pending_partitions:
@@ -76,21 +77,21 @@ def resolve_bronze_parquet_paths(
 
 def build_silver_metadata_payload(
     status: str,
-    source_bronze_metadata: dict[str, Any] | None = None,
+    source_bronze_metadata: MetadataDict | None = None,
     rows_written: int = 0,
     table_name: str = DEFAULT_TARGET_TABLE,
     reason: str | None = None,
-    write_mode: str = "replace",
-) -> dict[str, Any]:
+    write_mode: DatabaseWriteMode = "replace",
+) -> MetadataDict:
     source_bronze_metadata = source_bronze_metadata or {}
     pending_partitions = get_pending_bronze_partitions(source_bronze_metadata)
 
-    payload: dict[str, Any] = {
+    payload: MetadataDict = {
         "silver_status": status,
         "table_name": table_name,
         "rows_written": rows_written,
         "write_mode": write_mode,
-        "source_pending_bronze_year_month": pending_partitions,
+        "source_bronze_year_month": pending_partitions,
         "silver_was_skipped": status == "skipped",
     }
 
@@ -103,8 +104,8 @@ def build_silver_metadata_payload(
 def write_silver_metadata(
     silver_metadata_path: str,
     silver_metadata_file_name: str,
-    metadata: dict[str, Any],
-) -> dict[str, Any]:
+    metadata: MetadataDict,
+) -> MetadataDict:
     write_metadata_file(
         metadata_folder_path=silver_metadata_path,
         metadata_file_name=silver_metadata_file_name,
@@ -116,16 +117,16 @@ def write_silver_metadata(
 def write_silver_data_out(
     df: pl.LazyFrame,
     bronze_metadata_path: str,
-    bronze_metadata_dict: dict[str, Any],
+    bronze_metadata_dict: MetadataDict,
     bronze_metadata_file_name: str,
     silver_metadata_path: str,
     silver_metadata_file_name: str,
     database_writer: DatabaseWriter,
     table_name: str = DEFAULT_TARGET_TABLE,
     batch_size: int = 100_000,
-    write_mode: str = "replace",
+    write_mode: DatabaseWriteMode = "replace",
     merge_keys: Sequence[str] | None = None,
-) -> dict[str, Any]:
+) -> MetadataDict:
     rows_written = database_writer.write_lazyframe(
         lf=df,
         request=WriteRequest(

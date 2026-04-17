@@ -10,6 +10,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "adbc-driver-postgresql>=1.0.0",
+  "dlt>=1.25.0",
+  "dlthub>=0.22.1",
+  "pandas>=2.2.0",
   "polars>=1.0.0",
   "psycopg[binary]>=3.2.0",
   "pyarrow>=15.0.0",
@@ -18,6 +21,8 @@ dependencies = [
 
 [project.scripts]
 premium-pipeline = "pipeline.main:main"
+premium-export-monthly-partner-premium = "export_dlt.db_file_export:main"
+premium-container = "pipeline.container_cli:main"
 
 [dependency-groups]
 dev = [

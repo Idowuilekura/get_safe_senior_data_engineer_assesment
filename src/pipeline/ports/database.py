@@ -6,6 +6,8 @@ from typing import Sequence
 
 import polars as pl
 
+from pipeline.types import DatabaseWriteMode
+
 
 @dataclass(frozen=True)
 class WriteRequest:
@@ -13,7 +15,7 @@ class WriteRequest:
 
     target_name: str
     batch_size: int = 100_000
-    mode: str = "replace"
+    mode: DatabaseWriteMode = "replace"
     merge_keys: Sequence[str] | None = None
 
 

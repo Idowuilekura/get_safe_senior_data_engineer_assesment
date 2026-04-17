@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 import polars as pl
@@ -26,7 +27,7 @@ _POLARS_DTYPE_MAP: dict[str, PolarsDataType] = {
 }
 
 
-def serialize_schema(schema: dict[str, Any] | None) -> dict[str, str] | None:
+def serialize_schema(schema: Mapping[str, Any] | None) -> dict[str, str] | None:
     if not schema:
         return None
 

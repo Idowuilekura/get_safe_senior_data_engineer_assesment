@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: raw_transactions
+    database: "{{ env_var('DBT_SOURCE_DATABASE', target.database) }}"
+    schema: "{{ env_var('DBT_SOURCE_SCHEMA', 'public') }}"
+    description: "Raw data from premium transactions"
+    tables:
+      - name: premium_transaction
+        identifier: "{{ env_var('DBT_SOURCE_IDENTIFIER', 'premium_transaction') }}"
+        description: "Raw premium transactions"
+        columns:
+          - name: transaction_id
+            tests:
+              - not_null

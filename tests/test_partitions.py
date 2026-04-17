@@ -1,7 +1,9 @@
+from datetime import date
 from pathlib import Path
 
 from pipeline.silver.service import resolve_bronze_parquet_paths, resolve_silver_metadata_source
-from pipeline.utils.partitions import extract_year_month_globs
+from pipeline.utils import partitions
+from pipeline.utils.partitions import extract_year_month_globs, find_missing_days
 
 
 def test_extract_year_month_globs() -> None:
@@ -39,3 +41,23 @@ def test_resolve_bronze_parquet_paths_scans_full_bronze_dataset_for_replace(tmp_
     )
 
     assert paths == sorted([str(older_partition), str(newer_partition)])
+
+
+def test_find_missing_days_ignores_future_days_in_current_month(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(partitions, "_current_date", lambda: date(2026, 4, 16))
+
+    missing_days = find_missing_days(
+        {
+            2026: {
+                4: [1, 2, 3, 5, 16],
+            }
+        }
+    )
+
+    assert missing_days == {
+        2026: {
+            4: [4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+        }
+    }

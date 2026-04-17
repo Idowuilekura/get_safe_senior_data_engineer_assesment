@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import calendar
+from datetime import date
 from pathlib import Path
 
 import polars as pl
 
 from pipeline.types import FrameT
+
+
+def _current_date() -> date:
+    return date.today()
 
 
 def enrich_timestamp(df: pl.LazyFrame, time_column: str, new_time_column: str) -> pl.LazyFrame:
@@ -37,13 +42,18 @@ def get_days_month_df(df: pl.LazyFrame) -> dict[int, dict[int, list[int]]]:
 
 def find_missing_days(data: dict[int, dict[int, list[int]]]) -> dict[int, dict[int, list[int]]]:
     missing: dict[int, dict[int, list[int]]] = {}
+    current_date = _current_date()
 
     for year, months in data.items():
         missing[year] = {}
 
         for month, days in months.items():
             total_days = calendar.monthrange(year, month)[1]
-            expected_days = set(range(1, total_days + 1))
+            expected_day_limit = total_days
+            if year == current_date.year and month == current_date.month:
+                expected_day_limit = min(current_date.day, total_days)
+
+            expected_days = set(range(1, expected_day_limit + 1))
             actual_days = set(days)
             missing[year][month] = sorted(expected_days - actual_days)
 

@@ -78,6 +78,7 @@ Thumbs.db
 
 # Local data and large files
 data/
+output/
 *.parquet
 *.feather
 *.arrow
@@ -92,6 +93,10 @@ data/
 *.pem
 *.key
 *.secret
+analytics_premium/.user.yml
+
+# Allow checked-in example env templates
+!analytics_premium/.env.example
 
 # Notebook/editor artifacts
 .ipynb_checkpoints

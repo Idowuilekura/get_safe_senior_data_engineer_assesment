@@ -1,0 +1,13 @@
+services:
+  dbt:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DBT_ADAPTER_PACKAGE: ${DBT_ADAPTER_PACKAGE:-dbt-postgres}
+        DBT_ADAPTER_VERSION: ${DBT_ADAPTER_VERSION:-1.10.0}
+        DBT_TYPE: ${DBT_TYPE:-postgres}
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
-from pipeline.bronze.service import read_all_files, write_raw_data_bronze_out
+from pipeline.bronze.service import (
+    acknowledge_duplicate_source_files,
+    read_all_files,
+    write_raw_data_bronze_out,
+)
 from pipeline.config import PipelineConfig
 from pipeline.ports.database import DatabaseWriter
 from pipeline.silver.service import (
@@ -13,6 +16,7 @@ from pipeline.silver.service import (
     write_silver_data_out,
     write_silver_metadata,
 )
+from pipeline.types import MetadataDict
 
 logger = logging.getLogger(__name__)
 
@@ -20,34 +24,65 @@ logger = logging.getLogger(__name__)
 def run_pipeline(
     config: PipelineConfig,
     database_writer: DatabaseWriter,
-) -> dict[str, Any]:
-    bronze_df, existing_bronze_metadata, _, files_list_read = read_all_files(
+) -> dict[str, MetadataDict | None]:
+    (
+        bronze_df,
+        existing_bronze_metadata,
+        _,
+        changed_or_new_files,
+        files_list_read,
+        ignored_duplicate_files,
+        source_file_states,
+    ) = read_all_files(
         data_folder=config.data_folder_path,
         metadata_folder_path=config.bronze_output_path,
         metadata_file_name=config.bronze_metadata_file_name,
         insur_type=config.insur_type,
         dataset_type=config.dataset_type,
         ext_type=config.ext_type,
+        time_column=config.bronze_time_column,
     )
 
-    bronze_metadata_result: dict[str, Any] | None = None
+    bronze_metadata_result: MetadataDict | None = None
 
     if bronze_df is not None:
         logger.info(
-            "New raw files detected. Running bronze write for %s file(s).", len(files_list_read)
+            "Detected %s new/changed raw file(s). Running bronze write for %s impacted file(s).",
+            len(changed_or_new_files),
+            len(files_list_read),
         )
         bronze_metadata_result = write_raw_data_bronze_out(
             df=bronze_df,
             metadata_dict=existing_bronze_metadata,
+            source_file_states=source_file_states,
+            changed_or_new_files=changed_or_new_files,
             list_data_read=files_list_read,
             data_folder_out=config.bronze_output_path,
             metadata_path=config.bronze_output_path,
             metadata_file_name=config.bronze_metadata_file_name,
+            ext_type=config.ext_type,
             time_column=config.bronze_time_column,
             new_time_column=config.bronze_timestamp_column,
         )
+        if ignored_duplicate_files:
+            logger.info(
+                "Ignored %s duplicate raw file(s) with already ingested contents.",
+                len(ignored_duplicate_files),
+            )
     else:
-        logger.info("No new raw files detected. Bronze write will be skipped.")
+        if ignored_duplicate_files:
+            logger.info(
+                "Ignored %s duplicate raw file(s) with already ingested contents. Bronze write will be skipped.",
+                len(ignored_duplicate_files),
+            )
+            existing_bronze_metadata = acknowledge_duplicate_source_files(
+                existing_metadata=existing_bronze_metadata,
+                source_file_states=source_file_states,
+                metadata_path=config.bronze_output_path,
+                metadata_file_name=config.bronze_metadata_file_name,
+            )
+        else:
+            logger.info("No new raw files detected. Bronze write will be skipped.")
 
     silver_metadata_source = resolve_silver_metadata_source(
         current_bronze_metadata=bronze_metadata_result,

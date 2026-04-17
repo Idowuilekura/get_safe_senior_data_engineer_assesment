@@ -116,7 +116,10 @@ class SqlAlchemyPolarsWriter(DatabaseWriter):
             if_table_exists=mode,
             engine=self._write_engine,
         )
-        return rows_written if rows_written is not None else df.height
+        if rows_written is None or rows_written < 0:
+            return df.height
+
+        return rows_written
 
     @staticmethod
     def _normalize_connection_uri(connection_uri: str) -> str:

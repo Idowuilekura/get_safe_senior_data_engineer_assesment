@@ -1,0 +1,128 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import Any
+
+from export_dlt.db_file_export import (
+    DEFAULT_EXPORT_OUTPUT_DIR,
+    DEFAULT_GOLD_RELATION,
+    export_monthly_partner_premium_csv,
+)
+from pipeline.adapters.factory import DatabaseWriterFactory
+from pipeline.logging_config import configure_logging
+from pipeline.orchestration import run_pipeline
+from pipeline.settings import load_pipeline_config_from_env
+from pipeline.types import MetadataDict
+
+DEFAULT_PIPELINE_RUN_RESULT_ENV_VAR = "PIPELINE_RUN_RESULT_PATH"
+
+
+def build_full_etl_summary(
+    result: Mapping[str, MetadataDict | None],
+) -> dict[str, Any]:
+    silver_metadata = result.get("silver_metadata") or {}
+    rows_written = silver_metadata.get("rows_written")
+    silver_was_skipped = silver_metadata.get("silver_was_skipped")
+
+    has_new_data = (
+        silver_metadata.get("silver_status") == "completed"
+        and silver_was_skipped is not True
+        and isinstance(rows_written, int)
+        and rows_written != 0
+    )
+
+    return {
+        "command": "full-etl-pipeline",
+        "has_new_data": has_new_data,
+        "rows_written": rows_written if isinstance(rows_written, int) else 0,
+        "silver_status": silver_metadata.get("silver_status"),
+        "table_name": silver_metadata.get("table_name"),
+        "result": dict(result),
+    }
+
+
+def write_full_etl_summary(summary: Mapping[str, Any], destination: str | Path) -> Path:
+    output_path = Path(destination)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    return output_path
+
+
+def run_full_etl_pipeline(result_path: str | None = None) -> bool:
+    configure_logging()
+
+    config = load_pipeline_config_from_env()
+    database_writer = DatabaseWriterFactory.create(config)
+    result = run_pipeline(config=config, database_writer=database_writer)
+
+    summary = build_full_etl_summary(result)
+    resolved_result_path = result_path or os.environ.get(DEFAULT_PIPELINE_RUN_RESULT_ENV_VAR)
+    if resolved_result_path:
+        write_full_etl_summary(summary=summary, destination=resolved_result_path)
+
+    print("true" if summary["has_new_data"] else "false")
+    return bool(summary["has_new_data"])
+
+
+def run_dlt_export() -> Path:
+    configure_logging()
+
+    csv_path = export_monthly_partner_premium_csv(
+        output_dir=os.environ.get("PIPELINE_EXPORT_OUTPUT_DIR", DEFAULT_EXPORT_OUTPUT_DIR),
+        relation_name=os.environ.get(
+            "PIPELINE_GOLD_MONTHLY_PARTNER_PREMIUM_RELATION",
+            DEFAULT_GOLD_RELATION,
+        ),
+    )
+    print(csv_path)
+    return csv_path
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="premium-container",
+        description="Run the premium pipeline container entrypoints.",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    full_etl_parser = subparsers.add_parser(
+        "full-etl-pipeline",
+        help="Run the ETL pipeline and print whether new data was written.",
+    )
+    full_etl_parser.add_argument(
+        "--result-path",
+        help=(
+            "Optional JSON summary output path. Defaults to the "
+            f"{DEFAULT_PIPELINE_RUN_RESULT_ENV_VAR} environment variable when set."
+        ),
+    )
+
+    subparsers.add_parser(
+        "dlt-export",
+        help="Export the monthly partner premium gold relation to CSV.",
+    )
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    if args.command == "full-etl-pipeline":
+        run_full_etl_pipeline(result_path=args.result_path)
+        return 0
+
+    if args.command == "dlt-export":
+        run_dlt_export()
+        return 0
+
+    parser.error(f"Unsupported command: {args.command}")
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
