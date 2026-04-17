@@ -9,7 +9,7 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.dataset as ds
 
-from pipeline.types import MetadataDict, SourceFileStates
+from pipeline.types import MetadataDict, SourceFileState, SourceFileStates
 from pipeline.utils.files import (
     describe_source_files,
     extract_source_file_year_months,
@@ -100,10 +100,15 @@ def files_to_read(
         file_path
         for file_path in source_files
         if file_path in old_file_states
-        and _source_file_contents_changed(old_file_states[file_path], source_file_states[file_path])
+        and _source_file_contents_changed(
+            old_file_states[file_path],
+            source_file_states[file_path],
+        )
     ]
     changed_or_new_files = [
-        file_path for file_path in source_files if file_path in new_files or file_path in modified_existing_files
+        file_path
+        for file_path in source_files
+        if file_path in new_files or file_path in modified_existing_files
     ]
     if not changed_or_new_files:
         return metadata_dict, old_schema, [], [], ignored_duplicate_files, source_file_states
@@ -391,10 +396,9 @@ def _source_file_contents_changed(
     if old_digest is not None and new_digest is not None:
         return old_digest != new_digest
 
-    return (
-        old_state.get("size_bytes") != new_state.get("size_bytes")
-        or old_state.get("modified_time_ns") != new_state.get("modified_time_ns")
-    )
+    return old_state.get("size_bytes") != new_state.get("size_bytes") or old_state.get(
+        "modified_time_ns"
+    ) != new_state.get("modified_time_ns")
 
 
 def _extract_impacted_year_months(

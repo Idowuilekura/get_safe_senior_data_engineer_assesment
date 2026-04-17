@@ -226,6 +226,4 @@ def _parse_created_at(created_at_value: str) -> datetime:
     try:
         return datetime.fromisoformat(created_at_value)
     except ValueError as exc:
-        raise ValueError(
-            f"Unsupported created_at value '{created_at_value}'."
-        ) from exc
+        raise ValueError(f"Unsupported created_at value '{created_at_value}'.") from exc

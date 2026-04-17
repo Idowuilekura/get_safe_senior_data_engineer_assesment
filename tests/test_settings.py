@@ -101,7 +101,9 @@ def test_load_pipeline_config_from_env_requires_database_connection_settings() -
         load_pipeline_config_from_env({})
 
 
-def test_resolve_database_connection_uri_from_env_requires_supported_component_database_type() -> None:
+def test_resolve_database_connection_uri_from_env_requires_supported_component_database_type() -> (
+    None
+):
     with pytest.raises(ValueError, match="support only postgres/postgresql"):
         resolve_database_connection_uri_from_env(
             {

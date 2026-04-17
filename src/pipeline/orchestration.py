@@ -72,7 +72,8 @@ def run_pipeline(
     else:
         if ignored_duplicate_files:
             logger.info(
-                "Ignored %s duplicate raw file(s) with already ingested contents. Bronze write will be skipped.",
+                "Ignored %s duplicate raw file(s) with already ingested contents. "
+                "Bronze write will be skipped.",
                 len(ignored_duplicate_files),
             )
             existing_bronze_metadata = acknowledge_duplicate_source_files(

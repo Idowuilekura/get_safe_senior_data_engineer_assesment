@@ -191,9 +191,7 @@ def _require_first_env(environment: Mapping[str, str], env_vars: tuple[str, ...]
         return value
 
     supported_env_vars = " or ".join(env_vars)
-    raise ValueError(
-        f"Missing database setting. Set one of {supported_env_vars}."
-    )
+    raise ValueError(f"Missing database setting. Set one of {supported_env_vars}.")
 
 
 def _read_write_engine(environment: Mapping[str, str]) -> DatabaseWriteEngine:

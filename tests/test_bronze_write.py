@@ -148,9 +148,9 @@ def test_bronze_refresh_reprocesses_corrected_file_at_same_path(tmp_path: Path) 
         metadata_file_name="metadata.json",
     )
 
-    bronze_table = (
-        pl.scan_parquet(str(bronze_dir / "year=2024" / "month=1" / "*.parquet")).collect()
-    )
+    bronze_table = pl.scan_parquet(
+        str(bronze_dir / "year=2024" / "month=1" / "*.parquet")
+    ).collect()
     assert updated_metadata is not None
 
     assert bronze_table["id"].to_list() == [99]
@@ -245,7 +245,9 @@ def test_bronze_refresh_uses_payload_dates_when_filename_date_mismatches(tmp_pat
     assert not (bronze_dir / "year=2025").exists()
 
 
-def test_bronze_refresh_can_fall_back_to_created_at_when_filename_has_no_date(tmp_path: Path) -> None:
+def test_bronze_refresh_can_fall_back_to_created_at_when_filename_has_no_date(
+    tmp_path: Path,
+) -> None:
     source_dir = tmp_path / "source"
     bronze_dir = tmp_path / "bronze"
     source_dir.mkdir()

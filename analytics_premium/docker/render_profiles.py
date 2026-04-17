@@ -73,7 +73,10 @@ def build_output() -> dict:
     if "type" not in output:
         dbt_type = os.getenv("DBT_TYPE")
         if not dbt_type:
-            raise ValueError("Profile output is missing 'type'; set DBT_TYPE or include it in DBT_TARGET_OUTPUT_JSON.")
+            raise ValueError(
+                "Profile output is missing 'type'; set DBT_TYPE or include it in "
+                "DBT_TARGET_OUTPUT_JSON."
+            )
         output["type"] = dbt_type
 
     return output
