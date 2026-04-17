@@ -1,63 +1,269 @@
-# get_safe_senior_data_engineer_assesment
+# Getsafe Data Engineer Case Study
 
-Repository to store my solution to the Get Safe Insurance Tech senior data engineer assessment.
+Production-oriented solution for the Getsafe Senior Data Engineer assessment.
 
-## Premium pipeline
+This repository implements a batch data pipeline for insurance premium transactions. It ingests raw JSON files, builds bronze and silver data products, models a gold analytics layer with dbt, and exports the finance-facing monthly premium reconciliation report required by the case study.
 
-A small bronze and silver pipeline split into clear modules.
+## Table of Contents
 
-What it keeps from the notebook:
-- bronze detects only new or changed raw files using bronze metadata, then refreshes the impacted bronze partitions
-- bronze uses payload `created_at` values as the source of truth for partition dates; filename dates are only a fallback
-- if bronze parquet already exists but silver failed later, the next run can use bronze metadata already on disk
-- silver runs from current bronze metadata first, then falls back to existing bronze metadata
-- if neither source has pending bronze partitions, silver is skipped
-- silver metadata is written even when silver is skipped, so downstream work can also skip deterministically
+- [Overview](#overview)
+- [Business Context](#business-context)
+- [Problem Statement](#problem-statement)
+- [Input Data](#input-data)
+- [Expected Output](#expected-output)
+- [Architecture](#architecture)
+- [Technology Choices](#technology-choices)
+- [Repository Structure](#repository-structure)
+- [Pipeline Stages](#pipeline-stages)
+- [Local Setup](#local-setup)
+- [How to Run](#how-to-run)
+- [Docker Usage](#docker-usage)
+- [dbt Analytics Layer](#dbt-analytics-layer)
+- [Quality and CI](#quality-and-ci)
+- [Assumptions](#assumptions)
+- [Future Improvements](#future-improvements)
 
-Default filesystem contract:
-- raw input files live under `data/`
-- derived bronze parquet plus bronze metadata live under `output/bronze/`
-- silver metadata lives under `output/silver/`
-- gold export files live under `output/gold/`
+## Overview
 
-## Layout
+Getsafe is an insurance company with a digital operating model. In that environment, finance and accounting teams need trustworthy, reproducible reporting on premium transactions charged on behalf of insurance partners.
 
-- `pipeline/config.py`: application config model
-- `pipeline/settings.py`: environment/bootstrap loading
-- `pipeline/utils`: file, schema, metadata, and partition helpers
-- `pipeline/bronze`: bronze read and write logic
-- `pipeline/silver`: silver build and load logic
-- `pipeline/ports`: small interfaces for outbound dependencies
-- `pipeline/adapters`: generic SQL adapter plus backend-specific specializations
-- `pipeline/orchestration.py`: pipeline entry point
+This solution focuses on a practical insurance data workflow:
 
-## Example
+- ingest raw premium transaction files
+- preserve lineage and replayability
+- standardize and validate records
+- model accepted and rejected transaction paths
+- publish a monthly partner premium aggregate for finance reconciliation
 
-```python
-from pipeline.adapters.factory import DatabaseWriterFactory
-from pipeline.orchestration import run_pipeline
-from pipeline.settings import load_pipeline_config_from_env
+The final report is exported as:
 
-config = load_pipeline_config_from_env()
-
-result = run_pipeline(
-    config=config,
-    database_writer=DatabaseWriterFactory.create(config),
-)
-print(result)
+```text
+output/gold/fct_monthly_partner_premium.csv
 ```
 
-## Database writes
+## Business Context
 
-The generic SQL adapter supports:
-- `replace`: replace on first batch, append remaining batches
+The business use case is monthly closing and reconciliation.
 
-The Postgres adapter additionally supports:
-- `upsert`: stage batches into a temporary table, then merge into the target with `ON CONFLICT`
+Finance wants to verify invoice-based premium totals against raw transactional records. In insurance, this requires more than a simple aggregation job: the pipeline should be auditable, handle duplicate or malformed records safely, and make it clear which records were accepted for reporting versus which require operational follow-up.
 
-The pipeline stays database-agnostic at the application layer. The factory chooses the adapter from `database_connection_uri`, so switching to another SQLAlchemy-supported database is a config change. `upsert` remains Postgres-specific for now because merge semantics are dialect-specific.
+That is why this repository uses a layered design:
 
-## Local setup with uv
+- Bronze preserves raw transaction history with technical metadata
+- Silver produces a trusted transaction layer for downstream use
+- Gold exposes business-ready reporting models, including monthly premium totals by partner
+
+## Problem Statement
+
+The input dataset contains premium transactions charged on behalf of insurance partners. The required batch job must calculate total successfully charged premium per month per partner.
+
+Required output shape:
+
+```text
+partner, month, total_premium
+liadigital, 2022-06-01, 104.32
+...
+```
+
+Where:
+
+- `partner` is the charged insurance partner
+- `month` is the first day of the calendar month in `YYYY-MM-DD` format
+- `total_premium` is the total successful premium charged for that partner in that month
+
+## Input Data
+
+The main source file is `premium_transactions_data_20250306.json`.
+
+Relevant fields:
+
+- `transaction_id`: unique transaction identifier
+- `created_at`: timestamp of the premium charge
+- `amount`: charged premium amount
+- `currency`: transaction currency
+- `charged_partner`: insurance partner for whom the premium was charged
+- `status`: transaction outcome or processing status
+
+This repository also contains additional sample JSON files in `data/` to exercise incremental load behavior, duplicate handling, and rerun safety.
+
+## Expected Output
+
+The required deliverables from the case study are covered here as follows:
+
+- production-ready batch job: implemented in `src/pipeline/`
+- CSV written to `output/`: exported by `src/export_dlt/db_file_export.py`
+- containerized runtime: implemented with Docker
+- meaningful tests: implemented in `tests/`
+- notes on choices and assumptions: documented in this README
+
+## Architecture
+
+The implementation is split into two main layers:
+
+1. Python ETL pipeline
+   Handles raw file ingestion, bronze parquet generation, metadata tracking, silver writes, and operational orchestration.
+2. dbt analytics project
+   Builds bronze, silver, and gold analytics models on top of the loaded transactional data, including the final monthly partner premium aggregate.
+
+High-level flow:
+
+```text
+Raw JSON files
+    -> Python bronze ingestion
+    -> bronze parquet + metadata
+    -> Python silver load to database
+    -> dbt bronze/silver/gold models
+    -> fct_monthly_partner_premium
+    -> CSV export to output/gold/
+```
+
+This design separates operational ingestion concerns from analytics modeling concerns, which is a common industry pattern in modern insurance and fintech data platforms.
+
+## Technology Choices
+
+### Polars instead of Spark
+
+The assessment allows any data processing framework. I chose `Polars` because:
+
+- the dataset is small enough to process efficiently on a single machine
+- local development is faster and simpler
+- infrastructure and operational costs stay low
+- the implementation remains expressive and testable
+
+Spark would be a stronger fit only once data volume, orchestration complexity, or concurrency meaningfully outgrows the current workload.
+
+### SQLAlchemy-based write layer
+
+The ETL application layer stays database-agnostic, while still supporting Postgres-specific capabilities where needed.
+
+- generic SQL writes through SQLAlchemy-backed adapters
+- Postgres-specific upsert behavior for stronger merge semantics
+
+### dbt for the analytics layer
+
+dbt is used for the reporting layer because it provides:
+
+- clear model lineage
+- reusable SQL transformations
+- auditable accepted/rejected modeling patterns
+- a natural path to production analytics workflows
+
+## Repository Structure
+
+```text
+premium_pipeline_project_updated/
+├── analytics_premium/
+│   ├── models/
+│   │   ├── bronze/
+│   │   ├── silver/
+│   │   └── gold/
+│   ├── Dockerfile
+│   ├── docker-compose.yml
+│   └── README.md
+├── data/
+│   └── premium_transactions_data_*.json
+├── infra/
+│   └── docker/
+│       └── Dockerfile
+├── output/
+│   ├── bronze/
+│   ├── silver/
+│   └── gold/
+├── src/
+│   ├── export_dlt/
+│   │   └── db_file_export.py
+│   └── pipeline/
+│       ├── adapters/
+│       ├── bronze/
+│       ├── ports/
+│       ├── silver/
+│       ├── utils/
+│       ├── config.py
+│       ├── container_cli.py
+│       ├── main.py
+│       ├── orchestration.py
+│       └── settings.py
+├── tests/
+├── .github/workflows/
+├── pyproject.toml
+├── uv.lock
+└── README.md
+```
+
+Key components:
+
+- `src/pipeline/bronze/service.py`: file discovery, deduplication, partition-aware bronze writes
+- `src/pipeline/silver/service.py`: silver transformation and load logic
+- `src/pipeline/adapters/`: generic SQL and Postgres-specific write implementations
+- `src/pipeline/orchestration.py`: end-to-end ETL orchestration
+- `src/export_dlt/db_file_export.py`: export of monthly premium report to CSV
+- `analytics_premium/models/gold/`: gold reporting models, including `fct_monthly_partner_premium`
+
+## Pipeline Stages
+
+### Bronze
+
+The bronze stage reads one or more raw JSON files from `data/` and writes parquet to `output/bronze/`.
+
+Current behavior:
+
+- processes multiple landed files, not just one file
+- tracks source file metadata for incremental reruns
+- uses payload `created_at` as the primary partitioning truth
+- falls back to filename date parsing when needed
+- refreshes only impacted partitions
+- keeps metadata needed for deterministic reprocessing
+
+### Silver
+
+The silver stage builds the trusted transactional layer and writes it into the configured database.
+
+Current behavior:
+
+- standardizes the transaction data into a reusable operational dataset
+- supports database-agnostic writes
+- supports Postgres upserts when requested
+- writes metadata even when a stage is skipped, so downstream tasks can behave deterministically
+
+### Gold
+
+The gold stage is modeled in dbt under `analytics_premium/`.
+
+Current behavior:
+
+- models accepted and rejected transaction paths explicitly
+- builds dimensional and fact-style reporting models
+- publishes `fct_monthly_partner_premium` for finance reporting
+- supports CSV export for the case-study deliverable
+
+### Metadata and Traceability
+
+The solution includes metadata to improve auditability and rerun safety.
+
+Examples:
+
+- bronze metadata tracks processed source files and covered partitions
+- silver metadata captures run status and rows written
+- container execution can persist a JSON run summary through `PIPELINE_RUN_RESULT_PATH`
+
+## Local Setup
+
+### Prerequisites
+
+- Python 3.11+
+- `uv`
+- Docker
+- a target database such as Postgres or SQLite
+
+### Install dependencies
+
+```bash
+uv sync --all-groups
+```
+
+### Configure database access
+
+Example component-style configuration:
 
 ```bash
 export DATABASE_TYPE="postgres"
@@ -66,24 +272,15 @@ export DATABASE_PORT="5432"
 export DATABASE_NAME="mydb"
 export DATABASE_USER="postgres"
 export DATABASE_PASSWORD="postgres"
-uv sync
-uv run pytest
-uv run premium-pipeline
 ```
 
-If you prefer, you can still provide the full URI directly:
+Or a full URI:
 
 ```bash
 export DATABASE_CONNECTION_URI="postgresql+psycopg://postgres:postgres@localhost:5432/mydb"
 ```
 
-For a different backend, provide the full connection URI, for example:
-
-```bash
-export DATABASE_CONNECTION_URI="sqlite:///data/pipeline.db"
-```
-
-Optional runtime settings can also be provided via environment variables:
+Optional runtime settings:
 
 ```bash
 export PIPELINE_DATA_FOLDER_PATH="data"
@@ -95,46 +292,37 @@ export PIPELINE_BATCH_SIZE="100000"
 export PIPELINE_MERGE_KEYS="policy_id,transaction_id"
 ```
 
-## Gold export
+## How to Run
 
-To export the gold monthly partner premium aggregate to `output/gold/fct_monthly_partner_premium.csv`:
+Run the ETL pipeline:
 
 ```bash
-export DATABASE_TYPE="postgres"
-export DATABASE_HOST="localhost"
-export DATABASE_PORT="5432"
-export DATABASE_NAME="mydb"
-export DATABASE_USER="postgres"
-export DATABASE_PASSWORD="postgres"
+uv run premium-pipeline
+```
+
+Run the export:
+
+```bash
 uv run premium-export-monthly-partner-premium
 ```
 
-The export job first tries to read the materialized gold relation. If that table is not present yet, it falls back to computing the same monthly aggregation directly from `silver_transaction`, then writes the CSV to `output/gold/`.
-The export job reads the materialized gold relation directly. If that table is not present yet, the job fails fast with a clear upstream dependency error so the missing gold build is handled explicitly rather than silently changing the export logic.
+Expected CSV output:
 
-You can override the gold relation and destination folder with:
-
-```bash
-export PIPELINE_GOLD_MONTHLY_PARTNER_PREMIUM_RELATION="analytics.fct_monthly_partner_premium"
-export PIPELINE_EXPORT_OUTPUT_DIR="output/gold"
+```text
+output/gold/fct_monthly_partner_premium.csv
 ```
 
-## Docker
+## Docker Usage
 
-The container definition lives in [infra/docker/Dockerfile](/Users/id/Desktop/get_safe/premium_pipeline_project_updated/infra/docker/Dockerfile). The repo-level [.dockerignore](/Users/id/Desktop/get_safe/premium_pipeline_project_updated/.dockerignore) stays at the repository root on purpose because Docker applies ignore rules from the build context root, not from the Dockerfile directory.
+The Python runtime image is defined in `infra/docker/Dockerfile`.
 
-The Python runtime is packaged as a single image with one container entrypoint and two commands:
-
-- `full-etl-pipeline`: runs the bronze/silver load and prints `true` when fresh rows were written to the target table, otherwise `false`
-- `dlt-export`: exports the gold monthly partner premium relation and prints the generated CSV path
-
-Build the image:
+Build:
 
 ```bash
 docker build -f infra/docker/Dockerfile -t premium-pipeline .
 ```
 
-Run the ETL container and pass runtime configuration through environment variables:
+Run full ETL:
 
 ```bash
 docker run --rm \
@@ -150,11 +338,7 @@ docker run --rm \
   premium-pipeline full-etl-pipeline
 ```
 
-The ETL command exits successfully when no new data is available and writes only `true` or `false` to stdout so downstream orchestration can gate dbt and the export step without parsing logs. If `PIPELINE_RUN_RESULT_PATH` is set, the container also persists a JSON summary for the run.
-
-If your database is running on the host machine, avoid `localhost` from inside Docker because that points back to the container itself. Use `host.docker.internal` on Docker Desktop, or the database service name when running with Docker Compose.
-
-Run the export from the same image:
+Run export:
 
 ```bash
 docker run --rm \
@@ -167,3 +351,56 @@ docker run --rm \
   -v "$(pwd)/output:/app/output" \
   premium-pipeline dlt-export
 ```
+
+## dbt Analytics Layer
+
+The dbt project in `analytics_premium/` builds the reporting layer on top of the loaded transaction data.
+
+Run with Docker Compose:
+
+```bash
+cd analytics_premium
+cp .env.example .env
+docker compose run --rm dbt
+```
+
+Default target:
+
+```bash
+dbt run --select +fct_monthly_partner_premium
+```
+
+This modeling layer makes data quality handling explicit by separating accepted and rejected transactions, which is especially useful in insurance finance workflows where reconciliations must remain explainable.
+
+## Quality and CI
+
+Local checks mirrored in CI:
+
+```bash
+uv run ruff format --check .
+uv run ruff check .
+uv run mypy src tests
+uv run pytest
+uv build
+```
+
+GitHub Actions runs the same quality gates from `.github/workflows/ci.yml`.
+
+## Assumptions
+
+- More JSON files may arrive over time, not just one file.
+- Raw files are expected to include year, month, and day in the filename.
+- Historic files are treated as valid backfill for the period implied by their filename and payload timestamps.
+- Source files are assumed to be stable after landing, though the current implementation still detects changed files and refreshes affected bronze partitions when necessary.
+- Some rows may be malformed, incomplete, or invalid. The current design already distinguishes accepted and rejected paths in the analytics layer, and a fuller quarantine-plus-alerting path would be the next production hardening step.
+- Schema drift is not the primary target for this version. The pipeline preserves and reuses known schema state and is intended to surface added columns rather than silently masking them.
+- Polars is preferred over Spark for the current scale to keep execution simpler and cheaper without sacrificing correctness.
+- The business reporting grain is monthly total premium per insurance partner, using the first day of the month as the month key.
+
+## Future Improvements
+
+- add explicit quarantine storage and alerting for invalid insurance transaction rows
+- add fuller end-to-end integration tests across ETL, dbt, and CSV export
+- add scheduler/orchestrator support such as Airflow when operational cadence grows
+- extend cloud deployment guidance for object storage, managed compute, and secrets handling
+- harden schema evolution handling and downstream notification flows
