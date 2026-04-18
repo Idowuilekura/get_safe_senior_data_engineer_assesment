@@ -213,7 +213,7 @@ PY
     run_csv_export = _kubernetes_task(
         task_id="run_csv_export",
         image="idowuilekura/premium-pipeline:latest",
-        script="dlt-export",
+        script="gold-export",
         env_vars=_env_vars(),
         volume_mounts=[_output_mount()],
     )

@@ -59,7 +59,7 @@ with DAG(
     run_csv_export = build_docker_task(
         task_id="run_csv_export",
         image="idowuilekura/premium-pipeline:latest",
-        command="dlt-export",
+        command="gold-export",
         environment=db_environment,
         mounts=mounts,
     )
