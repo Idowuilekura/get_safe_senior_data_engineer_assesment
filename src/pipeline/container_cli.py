@@ -68,7 +68,7 @@ def run_full_etl_pipeline(result_path: str | None = None) -> bool:
     return bool(summary["has_new_data"])
 
 
-def run_dlt_export() -> Path:
+def run_gold_export() -> Path:
     configure_logging()
 
     csv_path = export_monthly_partner_premium_csv(
@@ -102,7 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers.add_parser(
-        "dlt-export",
+        "gold-export",
         help="Export the monthly partner premium gold relation to CSV.",
     )
     return parser
@@ -116,8 +116,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         run_full_etl_pipeline(result_path=args.result_path)
         return 0
 
-    if args.command == "dlt-export":
-        run_dlt_export()
+    if args.command == "gold-export":
+        run_gold_export()
         return 0
 
     parser.error(f"Unsupported command: {args.command}")

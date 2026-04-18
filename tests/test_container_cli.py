@@ -75,7 +75,7 @@ def test_full_etl_command_prints_false_and_writes_summary(
     assert persisted_summary["silver_status"] == "skipped"
 
 
-def test_dlt_export_command_prints_csv_path(tmp_path: Path, monkeypatch, capsys) -> None:
+def test_gold_export_command_prints_csv_path(tmp_path: Path, monkeypatch, capsys) -> None:
     expected_path = tmp_path / "output" / "gold" / "fct_monthly_partner_premium.csv"
 
     monkeypatch.setattr(container_cli, "configure_logging", lambda: None)
@@ -85,7 +85,7 @@ def test_dlt_export_command_prints_csv_path(tmp_path: Path, monkeypatch, capsys)
         lambda **_: expected_path,
     )
 
-    exit_code = container_cli.main(["dlt-export"])
+    exit_code = container_cli.main(["gold-export"])
 
     captured = capsys.readouterr()
     assert exit_code == 0

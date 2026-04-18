@@ -25,6 +25,7 @@ This repository implements a batch data pipeline for insurance premium transacti
 - [Container Images](#container-images)
 - [dbt Analytics Layer](#dbt-analytics-layer)
 - [Quality and CI](#quality-and-ci)
+- [Delivery and Release Flow](#delivery-and-release-flow)
 - [Assumptions](#assumptions)
 - [Future Improvements](#future-improvements)
 
@@ -39,6 +40,11 @@ This solution implements a focused insurance data workflow:
 - standardize and validate records
 - model accepted and rejected transaction paths
 - publish a monthly partner premium aggregate for finance reconciliation
+
+At the container interface, the ETL image exposes two operational commands:
+
+- `full-etl-pipeline` for the end-to-end ingestion and silver load path
+- `gold-export` for exporting the finance-facing gold aggregate to CSV
 
 The final report is exported as:
 
@@ -195,6 +201,20 @@ The assessment allows any data processing framework. I chose `Polars` because:
 
 Spark would be a stronger fit only once data volume, orchestration complexity, or concurrency meaningfully outgrows the current workload.
 
+### Parquet in Bronze instead of staying on raw JSON
+
+The bronze layer converts landed JSON into parquet rather than repeatedly reading JSON for downstream processing.
+
+That choice is deliberate:
+
+- parquet is materially faster for repeated analytical reads than raw JSON
+- parquet preserves an explicit schema, which reduces ambiguity during downstream transformation
+- typed columnar storage makes selective scans and projection cheaper
+- metadata-driven partition refreshes are easier to reason about when the persisted bronze layer has a stable physical format
+- it separates raw landing concerns from reusable analytical consumption concerns
+
+From a principal data engineering perspective, this is the right boundary: JSON is a good interchange format for landing, but not a good long-lived working format for replayable analytical processing. Converting once into a typed, columnar bronze representation keeps ingestion flexible while making the rest of the pipeline faster, more predictable, and easier to evolve.
+
 ### SQLAlchemy-based write layer
 
 The ETL code writes through a common SQLAlchemy-based database interface. That keeps pipeline orchestration and transformation logic independent of the target engine, while allowing adapter-specific behavior where required.
@@ -284,6 +304,13 @@ Current behavior:
 - falls back to filename date parsing when needed
 - refreshes only impacted partitions
 - persists metadata needed for deterministic reprocessing
+
+Why parquet here:
+
+- downstream reads become significantly cheaper than re-parsing JSON on every run
+- schema is persisted in a form better suited to validation and controlled evolution
+- the bronze layer becomes a stable analytical handoff, not just a raw-file mirror
+- dbt and downstream export steps can rely on a more efficient intermediate representation
 
 ### Silver
 
@@ -417,6 +444,11 @@ The workflow uses three images:
 - `idowuilekura/premium-pipeline:latest` for the ETL and export tasks
 - `idowuilekura/analytics-premium-dbt:latest` for the dbt task
 
+For the ETL image specifically:
+
+- `premium-container full-etl-pipeline` runs the pipeline
+- `premium-container gold-export` exports `fct_monthly_partner_premium` to CSV
+
 The custom Airflow image is defined in `airflow_stuff/Dockerfile` and built on top of `apache/airflow:3.2.0`.
 
 It packages the dependencies required for Airflow to launch container-based tasks from the DAG:
@@ -528,6 +560,29 @@ uv build
 ```
 
 GitHub Actions runs the same quality gates from `.github/workflows/ci.yml`.
+
+## Delivery and Release Flow
+
+This repository is intended to be delivered through a protected-branch workflow rather than by pushing directly to `master`.
+
+In practical terms, `master` is treated as a protected release branch. Changes should land there through a reviewed pull request, not through direct branch pushes.
+
+The expected flow is:
+
+1. make changes on a feature branch such as `codex/dev-safe-publish`
+2. run local checks
+3. open a pull request into `master`
+4. merge through the PR path
+5. let CI/CD publish the canonical images from `master`
+
+That distinction matters operationally:
+
+- `master` is the release source of truth
+- `latest` image tags should be treated as CI-owned outputs from merged code
+- branch builds can be published with immutable tags when needed, but they should not become the long-term source of truth for `latest`
+- this prevents drift where a manually pushed image no longer matches the repository state on `master`
+
+The release workflow in `.github/workflows/release.yml` builds and pushes the Docker images. Pushes to `master` produce both a `sha-<commit>` image tag and `latest`, while release tags publish the versioned tag and `latest`. That keeps the delivery path auditable and makes rollback or incident comparison much easier.
 
 ## Assumptions
 
