@@ -178,7 +178,7 @@ Within the scope of the current design, the system guarantees:
 - corrected source files trigger reprocessing of impacted bronze partitions
 - payload event time takes precedence over filename-derived dates
 - accepted and rejected transaction paths remain explicit in the analytics layer
-- Postgres upsert mode provides idempotent merge behavior when stable merge keys are supplied
+- when the configured target is PostgreSQL, keyed upserts provide idempotent local merge behavior as long as stable merge keys are supplied
 
 These guarantees are local-batch guarantees. They do not imply distributed exactly-once semantics or support for concurrent writers.
 
@@ -197,10 +197,15 @@ Spark would be a stronger fit only once data volume, orchestration complexity, o
 
 ### SQLAlchemy-based write layer
 
-The ETL code writes through a common database interface. That keeps pipeline orchestration and transformation logic independent of the target engine, while allowing adapter-specific behavior where required.
+The ETL code writes through a common SQLAlchemy-based database interface. That keeps pipeline orchestration and transformation logic independent of the target engine, while allowing adapter-specific behavior where required.
 
-- generic SQL adapters support standard replace and append writes
-- the Postgres adapter adds upsert behavior for stronger merge semantics
+Generic SQL adapters support standard replace and append writes across engines.
+
+PostgreSQL is the concrete database used in the local implementation because it is open source, straightforward to run in Docker, integrates cleanly with Airflow, dbt, and SQLAlchemy, and supports `ON CONFLICT` upserts for rerunnable transactional loads.
+
+Other databases were not chosen for the assessment because the workload does not require warehouse-scale compute or vendor-specific features, and adding a second operational dependency would increase setup complexity without materially improving the current design.
+
+The PostgreSQL adapter extends the generic write layer with keyed upsert behavior, so corrected silver records can be merged deterministically instead of only appended or fully replaced.
 
 ### dbt for the analytics layer
 
@@ -288,7 +293,7 @@ Current behavior:
 
 - standardizes the transaction data into a reusable operational dataset
 - writes through the database adapter layer
-- supports Postgres upserts when requested
+- can use PostgreSQL keyed upserts for rerunnable merges
 - writes metadata even when a stage is skipped, so downstream tasks can behave deterministically
 
 ### Gold
