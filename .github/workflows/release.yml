@@ -2,6 +2,8 @@ name: Release
 
 on:
   push:
+    branches:
+      - master
     tags:
       - "v*"
   workflow_dispatch:
@@ -88,7 +90,7 @@ jobs:
           push: true
           tags: |
             ${{ env.DOCKERHUB_USERNAME }}/premium-pipeline-airflow:${{ steps.vars.outputs.version }}
-            ${{ github.ref_type == 'tag' && format('{0}/premium-pipeline-airflow:latest', env.DOCKERHUB_USERNAME) || '' }}
+            ${{ (github.ref_type == 'tag' || github.ref_name == 'master') && format('{0}/premium-pipeline-airflow:latest', env.DOCKERHUB_USERNAME) || '' }}
 
       - name: Build and push ETL image
         uses: docker/build-push-action@v6
@@ -99,7 +101,7 @@ jobs:
           push: true
           tags: |
             ${{ env.DOCKERHUB_USERNAME }}/premium-pipeline:${{ steps.vars.outputs.version }}
-            ${{ github.ref_type == 'tag' && format('{0}/premium-pipeline:latest', env.DOCKERHUB_USERNAME) || '' }}
+            ${{ (github.ref_type == 'tag' || github.ref_name == 'master') && format('{0}/premium-pipeline:latest', env.DOCKERHUB_USERNAME) || '' }}
 
       - name: Build and push dbt image
         uses: docker/build-push-action@v6
@@ -110,4 +112,4 @@ jobs:
           push: true
           tags: |
             ${{ env.DOCKERHUB_USERNAME }}/analytics-premium-dbt:${{ steps.vars.outputs.version }}
-            ${{ github.ref_type == 'tag' && format('{0}/analytics-premium-dbt:latest', env.DOCKERHUB_USERNAME) || '' }}
+            ${{ (github.ref_type == 'tag' || github.ref_name == 'master') && format('{0}/analytics-premium-dbt:latest', env.DOCKERHUB_USERNAME) || '' }}
