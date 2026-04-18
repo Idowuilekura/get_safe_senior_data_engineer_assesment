@@ -1,20 +1,20 @@
 {{
     config(
         materialized='incremental',
-        unique_key='sur_key',
+        unique_key='transaction_partner_sk',
         incremental_strategy='merge'
     )
 }}
 
 select
-    sur_key,
+    transaction_partner_sk,
     transaction_id,
-    created_at,
+    created_at_raw,
     amount,
     currency,
     charged_partner,
     status,
-    created_at_timestamp,
+    created_at,
     year,
     month,
     day,

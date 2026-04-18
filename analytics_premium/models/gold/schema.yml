@@ -36,29 +36,32 @@ models:
         tests:
           - not_null
           - relationships:
-              to: ref('dim_partner')
-              field: partner_sk
+              arguments:
+                to: ref('dim_partner')
+                field: partner_sk
       - name: date_sk
         tests:
           - not_null
           - relationships:
-              to: ref('dim_date')
-              field: date_sk
+              arguments:
+                to: ref('dim_date')
+                field: date_sk
       - name: amount
         tests:
           - not_null
 
-  - name: fct_monthly_partner_premium
+  - name: monthly_partner_premiums
     tests:
       - dbt_utils.unique_combination_of_columns:
-          combination_of_columns:
-            - partner
-            - month
+          arguments:
+            combination_of_columns:
+              - partner
+              - month_start_date
     columns:
       - name: partner
         tests:
           - not_null
-      - name: month
+      - name: month_start_date
         tests:
           - not_null
       - name: total_premium

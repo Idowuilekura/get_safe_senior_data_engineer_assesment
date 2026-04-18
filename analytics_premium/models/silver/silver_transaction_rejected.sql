@@ -1,14 +1,14 @@
 {{ config(materialized='table') }}
 
 select
-    sur_key,
+    transaction_partner_sk,
     transaction_id,
-    created_at,
+    created_at_raw,
     amount,
     currency,
     charged_partner,
     status,
-    created_at_timestamp,
+    created_at,
     year,
     month,
     day,
@@ -16,12 +16,12 @@ select
     week_of_year,
     is_festive_season,
     transaction_id_occurrences,
-    sur_key_occurrences,
+    transaction_partner_sk_occurrences,
     has_null_transaction_id,
     has_duplicate_transaction_id,
-    has_duplicate_surrogate_key,
+    has_duplicate_transaction_partner_key,
     has_missing_partner,
-    has_missing_created_at_timestamp,
+    has_missing_created_at,
     is_rejected,
     rejection_reason
 from {{ ref('silver_transaction_quality') }}

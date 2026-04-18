@@ -1,8 +1,8 @@
 {{ config(materialized='table') }}
 
 select distinct
-    cast(to_char(created_at_timestamp::date, 'YYYYMMDD') as bigint) as date_sk,
-    created_at_timestamp::date as full_date,
+    cast(to_char(created_at::date, 'YYYYMMDD') as bigint) as date_sk,
+    created_at::date as full_date,
     year,
     month,
     day,
@@ -10,4 +10,4 @@ select distinct
     week_of_year,
     is_festive_season
 from {{ ref('silver_transaction') }}
-where created_at_timestamp is not null
+where created_at is not null

@@ -31,60 +31,69 @@ The dbt project can run in a container with a secure default posture:
 - the Docker profile is isolated from local dbt usage, so local development can keep using `~/.dbt/profiles.yml`
 - the container is adapter-aware: you choose the dbt adapter package at build time, and the runtime profile is rendered from environment variables
 
-Build the image:
+All Docker assets live under `infra/docker/`.
+
+Build and publish the image separately from Compose:
 
 ```bash
-docker build \
-  --build-arg DBT_ADAPTER_PACKAGE=dbt-postgres \
-  --build-arg DBT_ADAPTER_VERSION=1.10.0 \
-  --build-arg DBT_TYPE=postgres \
-  -t analytics-premium-dbt .
+./infra/docker/build-image.sh
+```
+
+You can optionally provide a custom image name:
+
+```bash
+./infra/docker/build-image.sh idowuilekura/analytics-premium-dbt:latest
 ```
 
 For another warehouse, rebuild with the matching adapter package and type. Example:
 
 ```bash
-docker build \
-  --build-arg DBT_ADAPTER_PACKAGE=dbt-snowflake \
-  --build-arg DBT_ADAPTER_VERSION=1.11.0 \
-  --build-arg DBT_TYPE=snowflake \
-  -t analytics-premium-dbt .
+DBT_ADAPTER_PACKAGE=dbt-snowflake \
+DBT_ADAPTER_VERSION=1.11.0 \
+DBT_TYPE=snowflake \
+./infra/docker/build-image.sh idowuilekura/analytics-premium-dbt:latest
 ```
 
-Run the default materialization flow:
+Once the image exists in your registry, Compose can just pull and run it:
 
 ```bash
-docker run --rm --env-file .env analytics-premium-dbt
+cp infra/docker/.env.example infra/docker/.env
+docker compose -f infra/docker/docker-compose.yml run --rm dbt
 ```
 
 By default, the container runs:
 
 ```bash
-dbt run --select +fct_monthly_partner_premium
+dbt run
 ```
 
-You can override the command to run other dbt tasks:
+If you want the default behavior to run only a subset, set `DBT_DEFAULT_SELECT` in `infra/docker/.env`.
+
+You can always override the command to run other dbt tasks:
 
 ```bash
-docker run --rm --env-file .env analytics-premium-dbt build --full-refresh
-docker run --rm --env-file .env analytics-premium-dbt test
+docker compose -f infra/docker/docker-compose.yml run --rm dbt run
+docker compose -f infra/docker/docker-compose.yml run --rm dbt run --select monthly_partner_premiums
+docker compose -f infra/docker/docker-compose.yml run --rm dbt build --full-refresh
+docker compose -f infra/docker/docker-compose.yml run --rm dbt test
 ```
 
-For local development with Docker Compose:
+If you prefer not to use Compose:
 
 ```bash
-cp .env.example .env
-docker compose run --rm dbt
+docker run --rm --env-file infra/docker/.env idowuilekura/analytics-premium-dbt:latest
 ```
 
 Important environment variables:
 
 - `DBT_TYPE` declares the active dbt adapter type for the rendered runtime profile
+- `DBT_IMAGE` tells Compose which published image to pull and run
+- `DBT_PULL_POLICY` controls whether Compose always pulls, pulls when missing, or never pulls
 - `DBT_TARGET_OUTPUT_JSON` can provide a full adapter-specific dbt output object for any warehouse
 - `DBT_OUTPUT_EXTRA_JSON` can add adapter-specific fields on top of the common env-based profile
 - `DBT_HOST`, `DBT_PORT`, `DBT_USER`, `DBT_PASSWORD`, `DBT_DATABASE`, `DBT_SCHEMA` control the common SQL-style target connection fields
 - `DBT_SOURCE_DATABASE`, `DBT_SOURCE_SCHEMA`, `DBT_SOURCE_IDENTIFIER` control which raw source table the project reads from
-- `DBT_DEFAULT_SELECT` controls the default `dbt run --select ...` target when no explicit command is passed
+- `DBT_DEFAULT_SELECT` optionally narrows the default `dbt run`; if it is blank, the container runs the full project
 
 Example fully generic runtime profile input for any adapter:
 

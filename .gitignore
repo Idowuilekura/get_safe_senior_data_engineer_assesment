@@ -94,6 +94,7 @@ output/
 *.key
 *.secret
 analytics_premium/.user.yml
+airflow_stuff/kuberntes_stuff/
 
 # Allow checked-in example env templates
 !analytics_premium/.env.example

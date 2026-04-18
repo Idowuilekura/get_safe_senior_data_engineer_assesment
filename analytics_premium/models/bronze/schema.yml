@@ -3,6 +3,6 @@ version: 2
 models:
   - name: bronze_transaction
     columns:
-      - name: sur_key
+      - name: transaction_partner_sk
         tests:
           - not_null

@@ -9,10 +9,10 @@
 with base as (
 
     select
-        sur_key,
+        transaction_partner_sk,
         transaction_id,
+        created_at_raw,
         created_at,
-        created_at_timestamp,
         amount,
         currency,
         charged_partner,
@@ -33,12 +33,12 @@ partner_dim as (
 final as (
 
     select
-        b.sur_key as transaction_sk,
+        b.transaction_partner_sk as transaction_sk,
         b.transaction_id,
         p.partner_sk,
-        cast(to_char(b.created_at_timestamp::date, 'YYYYMMDD') as bigint) as date_sk,
+        cast(to_char(b.created_at::date, 'YYYYMMDD') as bigint) as date_sk,
+        b.created_at_raw,
         b.created_at,
-        b.created_at_timestamp,
         b.amount,
         b.currency,
         b.status
