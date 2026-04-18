@@ -7,18 +7,22 @@ This repository implements a batch data pipeline for insurance premium transacti
 ## Table of Contents
 
 - [Overview](#overview)
+- [Design Principles and Tradeoffs](#design-principles-and-tradeoffs)
 - [Business Context](#business-context)
 - [Problem Statement](#problem-statement)
 - [Input Data](#input-data)
 - [File Naming and Timestamp Rules](#file-naming-and-timestamp-rules)
 - [Expected Output](#expected-output)
 - [Architecture](#architecture)
+- [System Guarantees](#system-guarantees)
 - [Technology Choices](#technology-choices)
 - [Repository Structure](#repository-structure)
 - [Pipeline Stages](#pipeline-stages)
+- [Failure Modes and Recovery](#failure-modes-and-recovery)
+- [Observability](#observability)
 - [Local Setup](#local-setup)
 - [How to Run](#how-to-run)
-- [Docker Usage](#docker-usage)
+- [Container Images](#container-images)
 - [dbt Analytics Layer](#dbt-analytics-layer)
 - [Quality and CI](#quality-and-ci)
 - [Assumptions](#assumptions)
@@ -28,7 +32,7 @@ This repository implements a batch data pipeline for insurance premium transacti
 
 Getsafe is an insurance company with a digital operating model. In that environment, finance and accounting teams need trustworthy, reproducible reporting on premium transactions charged on behalf of insurance partners.
 
-This solution focuses on a practical insurance data workflow:
+This solution implements a focused insurance data workflow:
 
 - ingest raw premium transaction files
 - preserve lineage and replayability
@@ -41,6 +45,18 @@ The final report is exported as:
 ```text
 output/gold/fct_monthly_partner_premium.csv
 ```
+
+## Design Principles and Tradeoffs
+
+This solution is designed around a small set of principles:
+
+- idempotent reruns over one-time success
+- event-time correctness over filename conventions
+- separation of ingestion and reporting concerns
+- auditability over silent data loss
+- simplicity at the current scale over premature distributed complexity
+
+These principles show up directly in the implementation: bronze metadata drives rerun behavior, `created_at` is the primary time source, ETL and dbt responsibilities are separated, and accepted and rejected records are modeled explicitly.
 
 ## Business Context
 
@@ -89,47 +105,20 @@ This repository also contains additional sample JSON files in `data/` to exercis
 
 ## File Naming and Timestamp Rules
 
-File naming is intentionally treated as a weak operational hint, not as a reliable business contract.
+Filenames are treated as non-authoritative. Event time is derived from the payload through `created_at`. Filename parsing is used only as a fallback when payload timestamps are unavailable.
 
-### Raw file naming
+The ingestion layer discovers files using the configured filename pattern:
 
-By default, the Python ingestion layer looks for files that:
+- contains `premium`
+- contains `transaction`
+- ends in `.json`
 
-- contain `premium` in the filename
-- contain `transaction` in the filename
-- end in `.json`
-
-Those defaults come from the runtime configuration:
-
-- `PIPELINE_INSUR_TYPE=premium`
-- `PIPELINE_DATASET_TYPE=transaction`
-- `PIPELINE_EXT_TYPE=.json`
-
-Example matching filenames:
-
-- `premium_transactions_data_20250306.json`
-- `premium_transaction_2025_03_06.json`
-- `partner_premium_transaction_dump_20250306.json`
-
-The pipeline can attempt to extract a file date from either of these filename patterns:
+If a fallback date is needed, the supported filename patterns are:
 
 - `YYYYMMDD`
 - `YYYY_MM_DD`
 
-However, filename dates are not treated as the authoritative event date. During the exercise, it became clear that filename usage was not fully consistent, which makes it risky to treat the filename itself as a trusted business field. In practice, filenames may be inconsistent, copied, renamed, or otherwise unsuitable as a stable semantic contract.
-
-For that reason:
-
-- `created_at` inside the JSON payload is the primary source of truth for event time and partitioning
-- filename date parsing is only a fallback when payload timestamps are unavailable
-- file discovery uses broad substring matching for ingestion, but reporting logic should not depend on filename structure beyond that
-- filename dates are treated as an operational hint only, for example when a producer appears to intend a date in the file name but the naming itself is not reliable enough to stand alone
-
-Operational assumption:
-
-- when a filename contains a parseable date, it is treated as a best-effort hint rather than guaranteed truth
-- that hint is used only when the payload does not provide usable timestamps
-- this assumption exists because the filename appears intended to communicate timing, even though the observed naming pattern is not consistent enough to rely on by itself
+This avoids coupling reporting logic to inconsistent naming conventions while still allowing pragmatic recovery when source files do not contain usable timestamps.
 
 ### Dataset and model naming
 
@@ -163,9 +152,9 @@ The required deliverables from the case study are covered here as follows:
 The implementation is split into two main layers:
 
 1. Python ETL pipeline
-   Handles raw file ingestion, bronze parquet generation, metadata tracking, silver writes, and operational orchestration.
+   Handles raw file ingestion, bronze parquet generation, metadata tracking, and silver writes.
 2. dbt analytics project
-   Builds bronze, silver, and gold analytics models on top of the loaded transactional data, including the final monthly partner premium aggregate.
+   Builds bronze, silver, and gold models on top of the transactional dataset, including the final monthly partner premium aggregate.
 
 High-level flow:
 
@@ -179,7 +168,19 @@ Raw JSON files
     -> CSV export to output/gold/
 ```
 
-This design separates operational ingestion concerns from analytics modeling concerns, which is a common industry pattern in modern insurance and fintech data platforms.
+This design separates ingestion and storage concerns from analytics modeling concerns. The ETL layer owns file handling and durable writes; the dbt layer owns reporting semantics.
+
+## System Guarantees
+
+Within the scope of the current design, the system guarantees:
+
+- reruns do not re-ingest duplicate source contents into bronze
+- corrected source files trigger reprocessing of impacted bronze partitions
+- payload event time takes precedence over filename-derived dates
+- accepted and rejected transaction paths remain explicit in the analytics layer
+- Postgres upsert mode provides idempotent merge behavior when stable merge keys are supplied
+
+These guarantees are local-batch guarantees. They do not imply distributed exactly-once semantics or support for concurrent writers.
 
 ## Technology Choices
 
@@ -196,10 +197,10 @@ Spark would be a stronger fit only once data volume, orchestration complexity, o
 
 ### SQLAlchemy-based write layer
 
-The ETL application layer stays database-agnostic, while still supporting Postgres-specific capabilities where needed.
+The ETL code writes through a common database interface. That keeps pipeline orchestration and transformation logic independent of the target engine, while allowing adapter-specific behavior where required.
 
-- generic SQL writes through SQLAlchemy-backed adapters
-- Postgres-specific upsert behavior for stronger merge semantics
+- generic SQL adapters support standard replace and append writes
+- the Postgres adapter adds upsert behavior for stronger merge semantics
 
 ### dbt for the analytics layer
 
@@ -277,7 +278,7 @@ Current behavior:
 - uses payload `created_at` as the primary partitioning truth
 - falls back to filename date parsing when needed
 - refreshes only impacted partitions
-- keeps metadata needed for deterministic reprocessing
+- persists metadata needed for deterministic reprocessing
 
 ### Silver
 
@@ -286,7 +287,7 @@ The silver stage builds the trusted transactional layer and writes it into the c
 Current behavior:
 
 - standardizes the transaction data into a reusable operational dataset
-- supports database-agnostic writes
+- writes through the database adapter layer
 - supports Postgres upserts when requested
 - writes metadata even when a stage is skipped, so downstream tasks can behave deterministically
 
@@ -315,12 +316,12 @@ Current dbt model layout:
   `fct_transaction`
   `fct_monthly_partner_premium`
 
-Design choices in the dbt layer:
+Design choices:
 
 - Bronze remains source-faithful rather than applying business-quality filtering too early
 - Silver owns the accepted versus rejected split
-- rejected records are kept in `silver_transaction_rejected` to preserve an auditable path without overbuilding a separate quarantine layer for the take-home
-- Gold is dimensional and reporting-friendly, with a transaction fact plus the monthly finance reconciliation aggregate
+- rejected records are kept in `silver_transaction_rejected` to preserve an auditable path without introducing a separate quarantine subsystem for this scope
+- Gold is reporting-oriented, with a transaction fact plus the monthly finance reconciliation aggregate
 
 ### Metadata and Traceability
 
@@ -332,110 +333,98 @@ Examples:
 - silver metadata captures run status and rows written
 - container execution can persist a JSON run summary through `PIPELINE_RUN_RESULT_PATH`
 
+## Failure Modes and Recovery
+
+The system is designed to fail in a recoverable way:
+
+- no new input files: bronze and silver work is skipped without mutating downstream state
+- invalid records: records are classified into rejected models rather than dropped silently
+- corrected source files: impacted bronze partitions are rebuilt on the next run
+- downstream failures: upstream bronze and silver artifacts remain reusable for reruns
+- schema drift beyond the persisted schema assumptions: the run may fail and requires operator intervention
+
+Recovery is operationally simple: fix the underlying issue, then rerun the pipeline. The metadata model is designed to make that rerun deterministic.
+
+## Observability
+
+The current implementation emphasizes traceability rather than a full production observability stack.
+
+- bronze metadata tracks processed files, schema snapshots, and partition state
+- silver metadata records run status and rows written
+- container execution can persist a JSON run summary
+- Airflow task logs provide orchestration visibility for the containerized path
+- dbt artifacts and logs provide model-level execution detail
+
+A production extension would add freshness metrics, anomaly detection, explicit alerting, and ownership for operational failures.
+
 ## Local Setup
 
 ### Prerequisites
 
-- Python 3.11+
-- `uv`
 - Docker
-- a target database such as Postgres or SQLite
+- Docker Compose
 
-### Install dependencies
+The supported local setup is containerized. Airflow, Postgres, and Redis run in the local Compose stack, while the ETL and dbt steps run as containerized tasks from the Airflow DAG.
 
-```bash
-uv sync --all-groups
-```
-
-### Configure database access
-
-Example component-style configuration:
-
-```bash
-export DATABASE_TYPE="postgres"
-export DATABASE_HOST="localhost"
-export DATABASE_PORT="5432"
-export DATABASE_NAME="mydb"
-export DATABASE_USER="postgres"
-export DATABASE_PASSWORD="postgres"
-```
-
-Or a full URI:
-
-```bash
-export DATABASE_CONNECTION_URI="postgresql+psycopg://postgres:postgres@localhost:5432/mydb"
-```
-
-Optional runtime settings:
-
-```bash
-export PIPELINE_DATA_FOLDER_PATH="data"
-export PIPELINE_BRONZE_OUTPUT_PATH="output/bronze"
-export PIPELINE_SILVER_METADATA_PATH="output/silver"
-export PIPELINE_TABLE_NAME="premium_transaction"
-export PIPELINE_DATABASE_WRITE_MODE="replace"
-export PIPELINE_BATCH_SIZE="100000"
-export PIPELINE_MERGE_KEYS="policy_id,transaction_id"
-```
+The Compose stack is already configured to use `airflow_stuff/` as the mounted workspace root through `AIRFLOW_HOST_ROOT_DIR`, so the default local path does not require additional host-side configuration.
 
 ## How to Run
 
-Run the ETL pipeline:
+Airflow is the supported orchestration path for this project.
+
+Clone the repository and move into the project directory:
 
 ```bash
-uv run premium-pipeline
+git clone https://github.com/Idowuilekura/get_safe_senior_data_engineer_assesment.git
+cd get_safe_senior_data_engineer_assesment
 ```
 
-Run the export:
+Start the local stack:
 
 ```bash
-uv run premium-export-monthly-partner-premium
+docker compose -f airflow_stuff/docker-compose.yaml up airflow-init
+docker compose -f airflow_stuff/docker-compose.yaml up -d
 ```
+
+Then:
+
+1. Open Airflow at `http://localhost:8080`
+2. Enable the DAG `premium_pipeline`
+3. Trigger a run
 
 Expected CSV output:
 
 ```text
-output/gold/fct_monthly_partner_premium.csv
+airflow_stuff/output/gold/fct_monthly_partner_premium.csv
 ```
 
-## Docker Usage
+Input files for the containerized path should be placed in:
 
-The Python runtime image is defined in `infra/docker/Dockerfile`.
-
-Build:
-
-```bash
-docker build -f infra/docker/Dockerfile -t premium-pipeline .
+```text
+airflow_stuff/data/
 ```
 
-Run full ETL:
+## Container Images
+
+The workflow uses three images:
+
+- `idowuilekura/premium-pipeline-airflow:3.2.0` for the Airflow services
+- `idowuilekura/premium-pipeline:latest` for the ETL and export tasks
+- `idowuilekura/analytics-premium-dbt:latest` for the dbt task
+
+The custom Airflow image is defined in `airflow_stuff/Dockerfile` and built on top of `apache/airflow:3.2.0`.
+
+It packages the dependencies required for Airflow to launch container-based tasks from the DAG:
+
+- `apache-airflow-providers-docker`
+- the Python `docker` client package
+
+The ETL and dbt task images are referenced directly in `airflow_stuff/dags/dags_air.py` and are pulled by Docker when those tasks execute.
+
+If the local Docker cache is stale, you can refresh the Airflow service image with:
 
 ```bash
-docker run --rm \
-  --env DATABASE_TYPE="postgres" \
-  --env DATABASE_HOST="host.docker.internal" \
-  --env DATABASE_PORT="5432" \
-  --env DATABASE_NAME="mydb" \
-  --env DATABASE_USER="postgres" \
-  --env DATABASE_PASSWORD="postgres" \
-  --env PIPELINE_RUN_RESULT_PATH="/app/output/full_etl_result.json" \
-  -v "$(pwd)/data:/app/data" \
-  -v "$(pwd)/output:/app/output" \
-  premium-pipeline full-etl-pipeline
-```
-
-Run export:
-
-```bash
-docker run --rm \
-  --env DATABASE_TYPE="postgres" \
-  --env DATABASE_HOST="host.docker.internal" \
-  --env DATABASE_PORT="5432" \
-  --env DATABASE_NAME="mydb" \
-  --env DATABASE_USER="postgres" \
-  --env DATABASE_PASSWORD="postgres" \
-  -v "$(pwd)/output:/app/output" \
-  premium-pipeline dlt-export
+docker compose -f airflow_stuff/docker-compose.yaml pull
 ```
 
 ## dbt Analytics Layer
@@ -456,7 +445,7 @@ Modeling approach:
 - `fct_transaction` preserves transaction grain for downstream reuse
 - `fct_monthly_partner_premium` produces the finance-facing monthly premium rollup by partner from trusted silver data, filtered to `status = 'processed'`
 
-This structure was chosen to keep the project compact but still senior in shape:
+This structure keeps the project compact while preserving clear model responsibilities:
 
 - source-faithful Bronze
 - explicit quality handling in Silver
@@ -511,7 +500,7 @@ Default target:
 dbt run --select +fct_monthly_partner_premium
 ```
 
-This modeling layer makes data quality handling explicit by separating accepted and rejected transactions, which is especially useful in insurance finance workflows where reconciliations must remain explainable.
+This modeling layer keeps data quality handling explicit by separating accepted and rejected transactions, which is useful in finance workflows where reconciliations need an audit trail.
 
 Latest local dbt validation during development:
 
@@ -552,6 +541,5 @@ GitHub Actions runs the same quality gates from `.github/workflows/ci.yml`.
 
 - add explicit quarantine storage and alerting for invalid insurance transaction rows
 - add fuller end-to-end integration tests across ETL, dbt, and CSV export
-- add scheduler/orchestrator support such as Airflow when operational cadence grows
 - extend cloud deployment guidance for object storage, managed compute, and secrets handling
 - harden schema evolution handling and downstream notification flows
