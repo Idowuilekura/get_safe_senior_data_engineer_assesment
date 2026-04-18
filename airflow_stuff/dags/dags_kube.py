@@ -177,7 +177,7 @@ with DAG(
     run_pipeline = _kubernetes_task(
         task_id="run_premium_pipeline",
         image="idowuilekura/premium-pipeline:latest",
-        script=f"""
+        script="""
 set -eu
 mkdir -p /app/output /airflow/xcom
 full-etl-pipeline
@@ -187,7 +187,7 @@ import os
 from pathlib import Path
 
 result_path = Path(os.environ["PIPELINE_RUN_RESULT_PATH"])
-payload = {{"has_new_data": False, "result_path": str(result_path)}}
+payload = {"has_new_data": False, "result_path": str(result_path)}
 if result_path.exists():
     payload = json.loads(result_path.read_text())
 Path("/airflow/xcom/return.json").write_text(json.dumps(payload))
