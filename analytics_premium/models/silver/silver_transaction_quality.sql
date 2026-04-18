@@ -3,14 +3,14 @@
 with base as (
 
     select
-        sur_key,
+        transaction_partner_sk,
         transaction_id,
-        created_at,
+        created_at_raw,
         amount,
         currency,
         charged_partner,
         status,
-        created_at_timestamp,
+        created_at,
         day,
         day_name,
         week_of_year,
@@ -27,9 +27,9 @@ profiled as (
             when transaction_id is null then 0
             else count(*) over (partition by transaction_id)
         end as transaction_id_occurrences,
-        count(*) over (partition by sur_key) as sur_key_occurrences,
-        extract(year from created_at_timestamp)::integer as year,
-        extract(month from created_at_timestamp)::integer as month
+        count(*) over (partition by transaction_partner_sk) as transaction_partner_sk_occurrences,
+        extract(year from created_at)::integer as year,
+        extract(month from created_at)::integer as month
     from base
 
 )
@@ -38,22 +38,22 @@ select
     profiled.*,
     transaction_id is null as has_null_transaction_id,
     transaction_id_occurrences > 1 as has_duplicate_transaction_id,
-    sur_key_occurrences > 1 as has_duplicate_surrogate_key,
+    transaction_partner_sk_occurrences > 1 as has_duplicate_transaction_partner_key,
     charged_partner is null as has_missing_partner,
-    created_at_timestamp is null as has_missing_created_at_timestamp,
+    created_at is null as has_missing_created_at,
     (
         transaction_id is null
         or transaction_id_occurrences > 1
-        or sur_key_occurrences > 1
+        or transaction_partner_sk_occurrences > 1
         or charged_partner is null
-        or created_at_timestamp is null
+        or created_at is null
     ) as is_rejected,
     concat_ws(
         ',',
         case when transaction_id is null then 'null_transaction_id' end,
         case when transaction_id_occurrences > 1 then 'duplicate_transaction_id' end,
-        case when sur_key_occurrences > 1 then 'duplicate_surrogate_key' end,
+        case when transaction_partner_sk_occurrences > 1 then 'duplicate_transaction_partner_key' end,
         case when charged_partner is null then 'missing_partner' end,
-        case when created_at_timestamp is null then 'missing_created_at_timestamp' end
+        case when created_at is null then 'missing_created_at' end
     ) as rejection_reason
 from profiled

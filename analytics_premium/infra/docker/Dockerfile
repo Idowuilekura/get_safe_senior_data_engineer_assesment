@@ -8,6 +8,9 @@ ARG DBT_TYPE=postgres
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 
 FROM python:${PYTHON_VERSION}-slim AS builder
+ARG DBT_CORE_VERSION
+ARG DBT_ADAPTER_PACKAGE
+ARG DBT_ADAPTER_VERSION
 ARG DBT_TYPE
 COPY --from=uv /uv /uvx /bin/
 
@@ -30,7 +33,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     "${DBT_ADAPTER_PACKAGE}==${DBT_ADAPTER_VERSION}"
 
 COPY dbt_project.yml packages.yml /app/
-COPY docker /app/docker
+COPY infra/docker /app/infra/docker
 COPY models /app/models
 COPY macros /app/macros
 COPY analyses /app/analyses
@@ -39,10 +42,12 @@ COPY snapshots /app/snapshots
 COPY tests /app/tests
 
 RUN mkdir -p /app/.runtime \
-    && python /app/docker/render_profiles.py /app/.runtime/profiles.yml \
+    && python /app/infra/docker/render_profiles.py /app/.runtime/profiles.yml \
     && dbt deps --project-dir /app --profiles-dir /app/.runtime
 
 FROM python:${PYTHON_VERSION}-slim AS runtime
+ARG DBT_ADAPTER_PACKAGE
+ARG DBT_ADAPTER_VERSION
 ARG DBT_TYPE
 
 ENV PYTHONUNBUFFERED=1 \
@@ -58,7 +63,7 @@ WORKDIR /app
 
 COPY --from=builder /opt/dbt-venv /opt/dbt-venv
 COPY --from=builder /app /app
-COPY --chown=app:app docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY --chown=app:app infra/docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 RUN chmod 0555 /usr/local/bin/docker-entrypoint.sh \
     && mkdir -p /app/target /app/logs /app/.runtime \

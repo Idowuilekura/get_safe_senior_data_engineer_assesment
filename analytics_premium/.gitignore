@@ -3,4 +3,5 @@ target/
 dbt_packages/
 logs/
 .env
+infra/docker/.env
 dbt_internal_packages/

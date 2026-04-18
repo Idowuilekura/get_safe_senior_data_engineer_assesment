@@ -1,0 +1,8 @@
+services:
+  dbt:
+    image: ${DBT_IMAGE}
+    pull_policy: ${DBT_PULL_POLICY:-always}
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
