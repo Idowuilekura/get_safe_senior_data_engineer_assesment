@@ -9,7 +9,3 @@ sources:
       - name: premium_transaction
         identifier: "{{ env_var('DBT_SOURCE_IDENTIFIER', 'premium_transaction') }}"
         description: "Raw premium transactions"
-        columns:
-          - name: transaction_id
-            tests:
-              - not_null

@@ -73,7 +73,7 @@ You can always override the command to run other dbt tasks:
 
 ```bash
 docker compose -f infra/docker/docker-compose.yml run --rm dbt run
-docker compose -f infra/docker/docker-compose.yml run --rm dbt run --select monthly_partner_premiums
+docker compose -f infra/docker/docker-compose.yml run --rm dbt run --select fct_monthly_partner_premium
 docker compose -f infra/docker/docker-compose.yml run --rm dbt build --full-refresh
 docker compose -f infra/docker/docker-compose.yml run --rm dbt test
 ```

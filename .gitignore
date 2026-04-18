@@ -79,6 +79,7 @@ Thumbs.db
 # Local data and large files
 data/
 output/
+logs/
 *.parquet
 *.feather
 *.arrow
