@@ -50,18 +50,18 @@ models:
         tests:
           - not_null
 
-  - name: monthly_partner_premiums
+  - name: fct_monthly_partner_premium
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns:
               - partner
-              - month_start_date
+              - month
     columns:
       - name: partner
         tests:
           - not_null
-      - name: month_start_date
+      - name: month
         tests:
           - not_null
       - name: total_premium
