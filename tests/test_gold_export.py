@@ -8,9 +8,7 @@ from export import monthly_partner_premium as export_module
 
 
 def test_build_monthly_partner_premium_query_uses_expected_columns() -> None:
-    query = export_module.build_monthly_partner_premium_query(
-        "analytics.monthly_partner_premiums"
-    )
+    query = export_module.build_monthly_partner_premium_query("analytics.monthly_partner_premiums")
 
     assert "partner" in query
     assert "month" in query
@@ -20,9 +18,7 @@ def test_build_monthly_partner_premium_query_uses_expected_columns() -> None:
 
 def test_build_monthly_partner_premium_query_rejects_invalid_relation_name() -> None:
     with pytest.raises(ValueError, match="relation_name"):
-        export_module.build_monthly_partner_premium_query(
-            "monthly_partner_premiums; drop table"
-        )
+        export_module.build_monthly_partner_premium_query("monthly_partner_premiums; drop table")
 
 
 def test_export_monthly_partner_premium_csv_writes_output_file(

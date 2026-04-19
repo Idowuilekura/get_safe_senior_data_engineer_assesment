@@ -1,14 +1,14 @@
 # analytics_premium
 
-This dbt project models premium transaction data through a layered analytics workflow:
+This dbt project models premium transaction data through a layered warehouse workflow:
 
-- Bronze for raw ingestion and standardization
-- Silver for cleaned, idempotent transaction records
-- Gold for dimensional models that support downstream reporting and analysis
+- `staging` for source-aligned cleanup and standardization
+- `intermediate` for quality classification and trusted transaction logic
+- `marts` for dimensional and aggregate reporting outputs
 
 ## Design Decisions
 
-The project follows a simple Bronze, Silver, Gold layering strategy. Bronze is a source-faithful ingestion layer that preserves the raw transaction rows while adding a deterministic technical key for lineage. Silver is the trusted transactional layer where records are classified into accepted and rejected paths, making data quality handling explicit and auditable without over-fragmenting the model graph. Gold presents the dimensional layer, separating facts from dimensions so reporting models remain clear and reusable.
+The project follows a `staging`, `intermediate`, and `marts` layering strategy. `staging` is the source-aligned entry layer that standardizes the upstream transaction shape while preserving a deterministic technical key for lineage. `intermediate` is the trusted transactional layer where records are classified into accepted and rejected paths, making data quality handling explicit and auditable without over-fragmenting the model graph. `marts` presents the dimensional and aggregate layer, separating facts from dimensions so reporting models remain clear and reusable.
 
 The fact table is designed at a transaction grain, with one row per transaction. It does not aggregate data yet, which keeps the model flexible for downstream consumers that may need different rollup levels. In this design, `amount` is treated as a measure rather than part of the business key.
 
@@ -18,7 +18,7 @@ The dimensional layer keeps descriptive context outside the fact table. `dim_par
 
 The incremental merge strategy in the accepted transactional layer supports updates such as status changes while preserving idempotency during reruns. This design favors reliability and reuse over premature complexity, avoids early aggregation, and leaves room for future marts or reporting models to build on a stable foundation.
 
-Duplicate handling is explicit rather than implicit. Bronze remains reconcilable to the source, while silver classifies records into accepted and rejected paths. Rejected rows capture duplicate business keys, duplicate surrogate keys, and records missing required dimensional attributes in a single audit model, which keeps the pipeline lean while preserving a clear operational trail for follow-up.
+Duplicate handling is explicit rather than implicit. `staging` remains reconcilable to the source-facing dataset shape, while `intermediate` classifies records into accepted and rejected paths. Rejected rows capture duplicate business keys, duplicate surrogate keys, and records missing required dimensional attributes in a single audit model, which keeps the pipeline lean while preserving a clear operational trail for follow-up.
 
 ## Docker
 
@@ -73,7 +73,7 @@ You can always override the command to run other dbt tasks:
 
 ```bash
 docker compose -f infra/docker/docker-compose.yml run --rm dbt run
-docker compose -f infra/docker/docker-compose.yml run --rm dbt run --select fct_monthly_partner_premium
+docker compose -f infra/docker/docker-compose.yml run --rm dbt run --select monthly_partner_premiums
 docker compose -f infra/docker/docker-compose.yml run --rm dbt build --full-refresh
 docker compose -f infra/docker/docker-compose.yml run --rm dbt test
 ```
@@ -92,6 +92,7 @@ Important environment variables:
 - `DBT_TARGET_OUTPUT_JSON` can provide a full adapter-specific dbt output object for any warehouse
 - `DBT_OUTPUT_EXTRA_JSON` can add adapter-specific fields on top of the common env-based profile
 - `DBT_HOST`, `DBT_PORT`, `DBT_USER`, `DBT_PASSWORD`, `DBT_DATABASE`, `DBT_SCHEMA` control the common SQL-style target connection fields
+- `DBT_STAGING_SCHEMA`, `DBT_INTERMEDIATE_SCHEMA`, `DBT_MARTS_SCHEMA` control where the three dbt layers are materialized; by default they are `staging`, `intermediate`, and `analytics`
 - `DBT_SOURCE_DATABASE`, `DBT_SOURCE_SCHEMA`, `DBT_SOURCE_IDENTIFIER` control which raw source table the project reads from
 - `DBT_DEFAULT_SELECT` optionally narrows the default `dbt run`; if it is blank, the container runs the full project
 

@@ -2,7 +2,7 @@
 
 Production-oriented solution for the Getsafe Senior Data Engineer assessment.
 
-This repository implements a batch data pipeline for insurance premium transactions. It ingests raw JSON files, persists an operational bronze layer, writes a trusted transactional base table to PostgreSQL, builds analytical bronze, silver, and gold models with dbt, and exports the finance-facing monthly premium reconciliation report required by the case study.
+This repository implements a batch data pipeline for insurance premium transactions. It ingests raw JSON files, persists an operational bronze layer, writes a trusted transactional base table to PostgreSQL, builds warehouse models with dbt across `staging`, `intermediate`, and `marts`, and exports the business-facing monthly premium reconciliation report required by the case study.
 
 ## Table of Contents
 
@@ -44,18 +44,18 @@ This solution implements a focused insurance data workflow:
 At the container interface, the ETL image exposes two operational commands:
 
 - `full-etl-pipeline` for the end-to-end ingestion and silver load path
-- `gold-export` for exporting the finance-facing gold aggregate to CSV
+- `gold-export` for exporting the monthly partner premium summary to CSV
 
 The final report is exported as:
 
 ```text
-output/gold/fct_monthly_partner_premium.csv
+output/gold/monthly_partner_premium_summary.csv
 ```
 
 In the local Airflow Compose setup, that same file is visible on the host at:
 
 ```text
-airflow_stuff/output/gold/fct_monthly_partner_premium.csv
+airflow_stuff/output/gold/monthly_partner_premium_summary.csv
 ```
 
 ## Design Principles and Tradeoffs
@@ -74,7 +74,7 @@ These principles show up directly in the implementation: bronze metadata drives 
 
 The business use case is monthly reconciliation of premium transactions processed on behalf of insurance partners. The platform handles payment execution, but the premium belongs to the underlying partner, so reporting must be auditable and traceable back to raw transactions.
 
-That is why the pipeline uses a layered design: bronze preserves landed history and metadata, the Python ETL writes a trusted transactional base table to PostgreSQL, and dbt builds the analytical models that produce the final partner-level monthly report.
+That is why the pipeline uses a layered design: bronze preserves landed history and metadata, the Python ETL writes a trusted transactional base table to PostgreSQL, and dbt builds the warehouse reporting models that produce the final partner-level monthly report.
 
 ## Problem Statement
 
@@ -135,13 +135,13 @@ If a fallback date is needed, the supported filename patterns are `YYYYMMDD` and
 The naming convention is straightforward:
 
 - raw operational dataset loaded by the ETL: `premium_transaction`
-- exported gold reporting relation: `fct_monthly_partner_premium`
-- exported CSV file: `output/gold/fct_monthly_partner_premium.csv`
+- warehouse reporting relation built by dbt: `monthly_partner_premiums`
+- exported CSV file: `output/gold/monthly_partner_premium_summary.csv`
 
 Within the dbt layer:
 
-- `bronze_` models preserve source-facing shape
-- `silver_` models represent trusted and quality-classified transaction data
+- `stg_` models standardize source-facing shape for downstream reuse
+- intermediate models represent trusted and quality-classified transaction data
 - `fct_` models represent reporting facts
 - `dim_` models represent reporting dimensions
 
@@ -155,8 +155,8 @@ partner, month, total_premium
 
 Export locations:
 
-- runtime path inside the task container: `output/gold/fct_monthly_partner_premium.csv`
-- host-visible path in the local Airflow setup: `airflow_stuff/output/gold/fct_monthly_partner_premium.csv`
+- runtime path inside the task container: `output/gold/monthly_partner_premium_summary.csv`
+- host-visible path in the local Airflow setup: `airflow_stuff/output/gold/monthly_partner_premium_summary.csv`
 
 The repository also includes the supporting ETL code, dbt models, Docker assets, tests, and delivery workflow needed to run and assess the solution end to end.
 
@@ -165,14 +165,16 @@ The repository also includes the supporting ETL code, dbt models, Docker assets,
 The repository has one execution flow and two modeling layers:
 
 - Python ETL handles file discovery, operational bronze persistence, metadata tracking, and writes the trusted base table to PostgreSQL
-- dbt handles the analytical bronze, silver, and gold models built on top of that base table
+- dbt handles the warehouse modeling layer built on top of that base table through `staging`, `intermediate`, and `marts`
 
 Terminology used in this repository:
 
 - `landing`: raw JSON files in `data/`
 - `operational bronze`: persisted parquet plus metadata written by the Python ETL
 - `trusted base table`: the reusable transactional dataset written by the Python ETL to PostgreSQL
-- `analytics bronze`, `analytics silver`, `analytics gold`: the dbt model layers used for reporting
+- `staging`: dbt source cleanup and source-aligned normalization
+- `intermediate`: dbt quality classification and accepted/rejected transaction logic
+- `marts`: dbt dimensional and aggregate reporting outputs
 - `gold export`: the final monthly CSV
 
 End-to-end flow:
@@ -181,8 +183,8 @@ End-to-end flow:
 Raw JSON files
     -> operational bronze parquet + metadata
     -> trusted base table in PostgreSQL
-    -> dbt bronze/silver/gold models
-    -> fct_monthly_partner_premium
+    -> dbt staging/intermediate/marts models
+    -> analytics.monthly_partner_premiums
     -> CSV export to output/gold/
 ```
 
@@ -250,9 +252,9 @@ premium_pipeline_project_updated/
 │   ├── infra/
 │   │   └── docker/
 │   ├── models/
-│   │   ├── bronze/
-│   │   ├── silver/
-│   │   └── gold/
+│   │   ├── staging/
+│   │   ├── intermediate/
+│   │   └── marts/
 │   └── README.md
 ├── data/
 │   └── premium_transactions_data_*.json
@@ -291,9 +293,9 @@ Key components:
 - `src/pipeline/adapters/`: generic SQL and Postgres-specific write implementations
 - `src/pipeline/orchestration.py`: end-to-end ETL orchestration
 - `src/export/monthly_partner_premium.py`: export of monthly premium report to CSV
-- `analytics_premium/models/bronze/bronze_transaction.sql`: source-faithful analytics bronze model
-- `analytics_premium/models/silver/`: accepted, rejected, and quality-classified transaction models
-- `analytics_premium/models/gold/`: dimensional reporting models, including `fct_monthly_partner_premium`
+- `analytics_premium/models/staging/premium/stg_premium__transactions.sql`: source-aligned warehouse staging model
+- `analytics_premium/models/intermediate/premium/`: accepted, rejected, and quality-classified transaction models
+- `analytics_premium/models/marts/premium/`: dimensional reporting models, including `monthly_partner_premiums`
 - `analytics_premium/infra/docker/`: dbt container build and runtime assets
 
 ## Pipeline Stages
@@ -308,7 +310,7 @@ The Python ETL standardizes transactions and writes the reusable base table to P
 
 ### Analytical Models
 
-dbt builds the analytical bronze, silver, and gold models, culminating in `fct_monthly_partner_premium` and the final CSV export.
+dbt builds the warehouse `staging`, `intermediate`, and `marts` models, culminating in `monthly_partner_premiums` and the final CSV export.
 
 ### Metadata and Traceability
 
@@ -391,7 +393,7 @@ Then:
 Expected CSV output:
 
 ```text
-airflow_stuff/output/gold/fct_monthly_partner_premium.csv
+airflow_stuff/output/gold/monthly_partner_premium_summary.csv
 ```
 
 ## Container Images
@@ -406,7 +408,7 @@ When the local stack is up, Airflow orchestrates the task images in sequence:
 
 - `premium-container full-etl-pipeline` runs the pipeline
 - the dbt image builds the reporting models
-- `premium-container gold-export` exports `fct_monthly_partner_premium` to CSV
+- `premium-container gold-export` exports `analytics.monthly_partner_premiums` to CSV
 
 The task images are referenced from `airflow_stuff/dags/dags_air.py` and are pulled when the DAG executes.
 
@@ -418,21 +420,21 @@ docker compose -f airflow_stuff/docker-compose.yaml pull
 
 ## dbt Analytics Layer
 
-The dbt project in `analytics_premium/` is responsible for the analytical layer after the trusted base table has been loaded into PostgreSQL.
+The dbt project in `analytics_premium/` is responsible for the warehouse reporting layer after the trusted base table has been loaded into PostgreSQL.
 
 Core models:
 
-- `bronze_transaction` is the source-faithful analytical starting point
-- `silver_transaction_quality` classifies quality issues including:
+- `stg_premium__transactions` is the source-aligned warehouse starting point
+- `premium_transaction_quality` classifies quality issues including:
   - null `transaction_id`
   - duplicate `transaction_id`
   - duplicate `sur_key`
   - missing `charged_partner`
   - missing `created_at_timestamp`
-- `silver_transaction` keeps only accepted rows
-- `silver_transaction_rejected` keeps rejected rows plus rejection metadata
+- `premium_transactions` keeps only accepted rows
+- `premium_rejected_transactions` keeps rejected rows plus rejection metadata
 - `fct_transaction` preserves transaction grain for downstream reuse
-- `fct_monthly_partner_premium` produces the finance-facing monthly premium rollup by partner from trusted analytical data, filtered to `status = 'processed'`
+- `monthly_partner_premiums` produces the business-facing monthly premium rollup by partner from trusted analytical data, filtered to `status = 'processed'`
 
 Testing in the dbt layer includes:
 
@@ -440,7 +442,7 @@ Testing in the dbt layer includes:
 - relationship tests
 - accepted-versus-rejected reconciliation checks
 - no-overlap checks on accepted and rejected `sur_key`
-- uniqueness of `(partner, month)` in `fct_monthly_partner_premium`
+- uniqueness of `(partner, month)` in `monthly_partner_premiums`
 
 ## Quality
 
