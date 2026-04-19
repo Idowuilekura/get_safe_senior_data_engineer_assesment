@@ -264,8 +264,8 @@ premium_pipeline_project_updated/
 │   ├── silver/
 │   └── gold/
 ├── src/
-│   ├── export_dlt/
-│   │   └── db_file_export.py
+│   ├── export/
+│   │   └── monthly_partner_premium.py
 │   └── pipeline/
 │       ├── adapters/
 │       ├── bronze/
@@ -290,7 +290,7 @@ Key components:
 - `src/pipeline/silver/service.py`: silver transformation and load logic
 - `src/pipeline/adapters/`: generic SQL and Postgres-specific write implementations
 - `src/pipeline/orchestration.py`: end-to-end ETL orchestration
-- `src/export_dlt/db_file_export.py`: export of monthly premium report to CSV
+- `src/export/monthly_partner_premium.py`: export of monthly premium report to CSV
 - `analytics_premium/models/bronze/bronze_transaction.sql`: source-faithful analytics bronze model
 - `analytics_premium/models/silver/`: accepted, rejected, and quality-classified transaction models
 - `analytics_premium/models/gold/`: dimensional reporting models, including `fct_monthly_partner_premium`

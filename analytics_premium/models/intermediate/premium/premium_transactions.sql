@@ -21,5 +21,5 @@ select
     day_name,
     week_of_year,
     is_festive_season
-from {{ ref('silver_transaction_quality') }}
+from {{ ref('premium_transaction_quality') }}
 where not is_rejected

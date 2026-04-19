@@ -1,15 +1,15 @@
 version: 2
 
 models:
-  - name: silver_transaction
+  - name: premium_transactions
     tests:
       - accepted_rejected_row_counts_match:
           arguments:
-            base_model: ref('bronze_transaction')
-            rejected_model: ref('silver_transaction_rejected')
+            base_model: ref('stg_premium__transactions')
+            rejected_model: ref('premium_rejected_transactions')
       - no_overlap_with:
           arguments:
-            compare_model: ref('silver_transaction_rejected')
+            compare_model: ref('premium_rejected_transactions')
             key_column: transaction_partner_sk
     columns:
       - name: transaction_partner_sk
@@ -27,7 +27,7 @@ models:
         tests:
           - not_null
 
-  - name: silver_transaction_rejected
+  - name: premium_rejected_transactions
     columns:
       - name: transaction_partner_sk
         tests:

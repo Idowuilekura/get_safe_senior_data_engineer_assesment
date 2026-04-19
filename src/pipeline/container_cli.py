@@ -7,10 +7,10 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from export_dlt.db_file_export import (
+from export.monthly_partner_premium import (
     DEFAULT_EXPORT_OUTPUT_DIR,
-    DEFAULT_GOLD_RELATION,
     export_monthly_partner_premium_csv,
+    resolve_gold_relation_name,
 )
 from pipeline.adapters.factory import DatabaseWriterFactory
 from pipeline.logging_config import configure_logging
@@ -73,10 +73,7 @@ def run_gold_export() -> Path:
 
     csv_path = export_monthly_partner_premium_csv(
         output_dir=os.environ.get("PIPELINE_EXPORT_OUTPUT_DIR", DEFAULT_EXPORT_OUTPUT_DIR),
-        relation_name=os.environ.get(
-            "PIPELINE_GOLD_MONTHLY_PARTNER_PREMIUM_RELATION",
-            DEFAULT_GOLD_RELATION,
-        ),
+        relation_name=resolve_gold_relation_name(),
     )
     print(csv_path)
     return csv_path

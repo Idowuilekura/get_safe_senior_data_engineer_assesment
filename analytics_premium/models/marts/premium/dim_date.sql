@@ -9,5 +9,5 @@ select distinct
     day_name,
     week_of_year,
     is_festive_season
-from {{ ref('silver_transaction') }}
+from {{ ref('premium_transactions') }}
 where created_at is not null

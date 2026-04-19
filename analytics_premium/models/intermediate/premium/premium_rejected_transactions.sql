@@ -24,5 +24,5 @@ select
     has_missing_created_at,
     is_rejected,
     rejection_reason
-from {{ ref('silver_transaction_quality') }}
+from {{ ref('premium_transaction_quality') }}
 where is_rejected
