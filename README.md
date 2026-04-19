@@ -55,7 +55,7 @@ output/gold/monthly_partner_premium_summary.csv
 In the local Airflow Compose setup, that same file is visible on the host at:
 
 ```text
-airflow_stuff/output/gold/monthly_partner_premium_summary.csv
+airflow/output/gold/monthly_partner_premium_summary.csv
 ```
 
 ## Design Principles and Tradeoffs
@@ -156,7 +156,7 @@ partner, month, total_premium
 Export locations:
 
 - runtime path inside the task container: `output/gold/monthly_partner_premium_summary.csv`
-- host-visible path in the local Airflow setup: `airflow_stuff/output/gold/monthly_partner_premium_summary.csv`
+- host-visible path in the local Airflow setup: `airflow/output/gold/monthly_partner_premium_summary.csv`
 
 The repository also includes the supporting ETL code, dbt models, Docker assets, tests, and delivery workflow needed to run and assess the solution end to end.
 
@@ -361,7 +361,7 @@ When you start the local Compose stack, it brings up the core services used by t
 - PostgreSQL for transactional storage
 - Redis for Airflow task coordination
 
-The ETL, dbt, and CSV export steps are then run by the Airflow DAG as containers. The stack is already configured to use `airflow_stuff/` as the mounted workspace root through `AIRFLOW_HOST_ROOT_DIR`, so the default project layout works without additional host-side setup.
+The ETL, dbt, and CSV export steps are then run by the Airflow DAG as containers. The stack is already configured to use `airflow/` as the mounted workspace root through `AIRFLOW_HOST_ROOT_DIR`, so the default project layout works without additional host-side setup.
 
 ## How to Run
 
@@ -377,15 +377,15 @@ cd get_safe_senior_data_engineer_assesment
 Start the local stack:
 
 ```bash
-docker compose -f airflow_stuff/docker-compose.yaml up airflow-init
-docker compose -f airflow_stuff/docker-compose.yaml up -d
+docker compose -f airflow/docker-compose.yaml up airflow-init
+docker compose -f airflow/docker-compose.yaml up -d
 ```
 
 This starts the local Airflow, PostgreSQL, and Redis services.
 
 Then:
 
-1. Place input files in `airflow_stuff/data/`
+1. Place input files in `airflow/data/`
 2. Open Airflow at `http://localhost:8080`
 3. Enable the DAG `premium_pipeline`
 4. Trigger a run
@@ -393,7 +393,7 @@ Then:
 Expected CSV output:
 
 ```text
-airflow_stuff/output/gold/monthly_partner_premium_summary.csv
+airflow/output/gold/monthly_partner_premium_summary.csv
 ```
 
 ## Container Images
@@ -410,12 +410,12 @@ When the local stack is up, Airflow orchestrates the task images in sequence:
 - the dbt image builds the reporting models
 - `premium-container gold-export` exports `analytics.monthly_partner_premiums` to CSV
 
-The task images are referenced from `airflow_stuff/dags/dags_air.py` and are pulled when the DAG executes.
+The task images are referenced from `airflow/dags/dags_air.py` and are pulled when the DAG executes.
 
 If the local Docker cache is stale, you can refresh the Airflow service image with:
 
 ```bash
-docker compose -f airflow_stuff/docker-compose.yaml pull
+docker compose -f airflow/docker-compose.yaml pull
 ```
 
 ## dbt Analytics Layer

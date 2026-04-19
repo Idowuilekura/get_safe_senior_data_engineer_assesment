@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import os
 import re
-from pathlib import Path
 from collections.abc import Mapping
+from pathlib import Path
 
 import polars as pl
 from sqlalchemy import create_engine, inspect
