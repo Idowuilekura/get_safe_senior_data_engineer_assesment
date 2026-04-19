@@ -77,6 +77,9 @@ class DockerMount:
 db_config = DatabaseConfig()
 host_project_dir = resolve_host_project_dir()
 docker_mount = DockerMount(host_base_dir=host_project_dir)
+staging_schema = os.environ.get("DBT_STAGING_SCHEMA", "staging")
+intermediate_schema = os.environ.get("DBT_INTERMEDIATE_SCHEMA", "intermediate")
+marts_schema = os.environ.get("DBT_MARTS_SCHEMA", "analytics")
 
 db_environment = {
     "DATABASE_TYPE": db_config.database_type,
@@ -86,10 +89,14 @@ db_environment = {
     "DATABASE_USER": db_config.database_user,
     "DATABASE_PASSWORD": db_config.database_password,
     "PIPELINE_RUN_RESULT_PATH": db_config.pipeline_run_result_path,
+    "PIPELINE_GOLD_MONTHLY_PARTNER_PREMIUM_SCHEMA": marts_schema,
 }
 
 dbt_environment = {
     **db_environment,
+    "DBT_STAGING_SCHEMA": staging_schema,
+    "DBT_INTERMEDIATE_SCHEMA": intermediate_schema,
+    "DBT_MARTS_SCHEMA": marts_schema,
     "DBT_SOURCE_IDENTIFIER": "premium_transaction",
 }
 

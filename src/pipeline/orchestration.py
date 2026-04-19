@@ -136,7 +136,7 @@ def run_pipeline(
             "silver_metadata": silver_metadata,
         }
 
-    silver_metadata = write_silver_data_out(
+    silver_metadata, updated_bronze_metadata = write_silver_data_out(
         df=silver_df,
         bronze_metadata_path=config.bronze_output_path,
         bronze_metadata_dict=silver_metadata_source,
@@ -151,6 +151,6 @@ def run_pipeline(
     )
 
     return {
-        "bronze_metadata": bronze_metadata_result,
+        "bronze_metadata": updated_bronze_metadata,
         "silver_metadata": silver_metadata,
     }

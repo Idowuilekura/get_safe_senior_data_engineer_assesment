@@ -76,7 +76,7 @@ def test_full_etl_command_prints_false_and_writes_summary(
 
 
 def test_gold_export_command_prints_csv_path(tmp_path: Path, monkeypatch, capsys) -> None:
-    expected_path = tmp_path / "output" / "gold" / "fct_monthly_partner_premium.csv"
+    expected_path = tmp_path / "output" / "gold" / "monthly_partner_premium_summary.csv"
 
     monkeypatch.setattr(container_cli, "configure_logging", lambda: None)
     monkeypatch.setattr(

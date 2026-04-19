@@ -17,7 +17,7 @@ with base as (
         currency,
         charged_partner,
         status
-    from {{ ref('silver_transaction') }}
+    from {{ ref('premium_transactions') }}
 
 ),
 

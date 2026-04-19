@@ -14,7 +14,7 @@ with source_data as (
         day_name,
         week_of_year,
         is_festive_season
-    from {{ source('raw_transactions', 'premium_transaction') }}
+from {{ source('raw_transactions', 'premium_transaction') }}
 
 )
 

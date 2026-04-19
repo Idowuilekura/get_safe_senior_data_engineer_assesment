@@ -21,7 +21,7 @@ dependencies = [
 
 [project.scripts]
 premium-pipeline = "pipeline.main:main"
-premium-export-monthly-partner-premium = "export_dlt.db_file_export:main"
+premium-export-monthly-partner-premium = "export.monthly_partner_premium:main"
 premium-container = "pipeline.container_cli:main"
 
 [dependency-groups]

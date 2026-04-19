@@ -15,7 +15,7 @@ with base as (
         day_name,
         week_of_year,
         is_festive_season
-    from {{ ref('bronze_transaction') }}
+    from {{ ref('stg_premium__transactions') }}
 
 ),
 

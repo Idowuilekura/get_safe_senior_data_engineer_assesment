@@ -4,7 +4,7 @@ select
     charged_partner as partner,
     date_trunc('month', created_at)::date as month,
     sum(amount) as total_premium
-from {{ ref('silver_transaction') }}
+from {{ ref('premium_transactions') }}
 where status = 'processed'
 group by
     charged_partner,

@@ -126,7 +126,7 @@ def write_silver_data_out(
     batch_size: int = 100_000,
     write_mode: DatabaseWriteMode = "replace",
     merge_keys: Sequence[str] | None = None,
-) -> MetadataDict:
+) -> tuple[MetadataDict, MetadataDict]:
     rows_written = database_writer.write_lazyframe(
         lf=df,
         request=WriteRequest(
@@ -158,4 +158,4 @@ def write_silver_data_out(
         metadata_file_name=bronze_metadata_file_name,
         metadata=updated_bronze_metadata,
     )
-    return silver_metadata
+    return silver_metadata, updated_bronze_metadata
