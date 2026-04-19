@@ -19,7 +19,7 @@ PIPELINE_REPO_URL = os.environ.get(
 PIPELINE_REPO_BRANCH = os.environ.get("PREMIUM_PIPELINE_GIT_BRANCH", "master")
 PIPELINE_REPO_DATA_SUBPATH = os.environ.get(
     "PREMIUM_PIPELINE_GIT_DATA_SUBPATH",
-    "airflow_stuff/data",
+    "airflow/data",
 )
 PIPELINE_RESULT_PATH = "/app/output/full_etl_result.json"
 DB_HOST = os.environ.get("PREMIUM_PIPELINE_DB_HOST", "airflow-postgresql")

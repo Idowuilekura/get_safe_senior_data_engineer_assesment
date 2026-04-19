@@ -11,7 +11,7 @@ on:
       - "src/**"
       - "tests/**"
       - "infra/**"
-      - "airflow_stuff/**"
+      - "airflow/**"
       - "analytics_premium/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -93,8 +93,8 @@ jobs:
       - name: Build and push Airflow image
         uses: docker/build-push-action@v6
         with:
-          context: airflow_stuff
-          file: airflow_stuff/Dockerfile
+          context: airflow
+          file: airflow/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
