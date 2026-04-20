@@ -40,8 +40,9 @@ Business rules applied to the exported report:
 ## Business Rules
 
 - `created_at` is the authoritative business timestamp for reporting month and partition impact. Filename dates are fallback metadata only.
-- The finance-facing export is `analytics.monthly_partner_premiums`, which normalizes GBP amounts to EUR using a single documented 2024 ECB annual-average reference rate.
-- A companion mart, `analytics.monthly_partner_premiums_by_currency`, preserves monthly totals in source currency for auditability.
+- The finance-facing export is `analytics.monthly_partner_premiums`, which normalizes `GBP` amounts to `EUR` using a single documented 2024 ECB annual-average reference rate hardcoded in the mart for this repository.
+- The normalized mart currently supports `EUR` and `GBP` only. Any other currency would remain visible in the by-currency mart but would not contribute to the EUR-normalized export.
+- A companion mart, `analytics.monthly_partner_premiums_by_currency`, preserves separate monthly totals by source currency for auditability.
 - `processed` rows with `amount <= 0` are treated as reconciliation exceptions and routed to the rejected path rather than counted as earned premium.
 - Low positive premiums remain valid. The case study does not impose a minimum-positive-amount rejection threshold.
 
@@ -50,6 +51,7 @@ Business rules applied to the exported report:
 - Polars is used for ingestion because the dataset fits comfortably in memory and the local development model benefits more from low setup overhead than from distributed execution.
 - Bronze data is persisted in Parquet rather than read repeatedly from raw JSON so reruns benefit from columnar reads, stable schema handling, and inexpensive partition rebuilds.
 - PostgreSQL is used as the trusted relational layer because it provides a simple audited handoff into dbt without introducing warehouse-specific complexity into the ingestion code.
+- `replace` is the default write mode for the trusted table because this repository is optimized for deterministic rebuilds from bronze at local batch scale. PostgreSQL `upsert` remains available as an alternative operating mode when incremental write behavior is preferred.
 - Accepted and rejected paths are modeled explicitly in dbt rather than filtered silently in ETL so reporting remains auditable and data-quality decisions stay inspectable in SQL.
 - FX conversion uses one documented 2024 reference rate rather than a daily historical lookup because all sample business timestamps are in 2024 and the additional ingestion path would add more operational surface area than analytical value for this exercise.
 
@@ -70,22 +72,26 @@ Pipeline stages:
 - Bronze ingestion is metadata-driven. Seen file content is tracked with content digests, file size, and modified time.
 - Exact duplicate contents are not re-ingested, even if they arrive under a new filename.
 - If a previously ingested file changes at the same path, impacted year/month Parquet partitions are rebuilt.
-- Silver metadata is only cleared after a successful database write.
 - dbt keeps accepted and rejected records explicit through separate models.
-- The main exported mart normalizes GBP amounts to EUR using a single fixed 2024 ECB annual-average rate.
-- A companion mart preserves monthly totals split by source currency for auditability.
+- The by-currency mart preserves separate monthly totals by source currency for auditability.
 
 Execution scope:
 
 - The ETL defaults to `replace` mode for database writes. In this implementation, that is intentional: when new bronze data exists, the trusted transaction table is rebuilt from the current bronze state before dbt runs. At this scale, deterministic rebuilds are simpler to reason about than incremental silver maintenance and reduce partial-staleness risk in the trusted base layer.
 - PostgreSQL `upsert` behaviour is available, but only when `PIPELINE_DATABASE_WRITE_MODE=upsert` and `PIPELINE_MERGE_KEYS` are configured.
-- Concurrent writers are not coordinated by the codebase. Run this pipeline sequentially.
+- Bronze pending-state metadata is only cleared after a successful silver database write.
 
 ## Event Time Policy
 
 The sample files in this repository have names such as `premium_transactions_data_20250306_copy.json`, but the payload timestamps are in 2024. The implementation intentionally treats payload `created_at` values as the source of truth and only falls back to filename parsing when payload dates are unavailable.
 
 That behaviour is implemented in the ingestion utilities and covered by tests, so monthly grouping follows transaction event time rather than filename conventions.
+
+Timezone assumption:
+
+- `created_at` is parsed as a naive timestamp in the source string format `%m/%d/%Y %H:%M:%S`.
+- No timezone conversion is applied during ingestion or aggregation.
+- Month boundaries therefore follow the parsed timestamp values exactly as provided by the source data.
 
 ## Repository Layout
 
@@ -262,6 +268,12 @@ uv run premium-container plan-backfill --from 2024-01 --to 2025-12
 
 The planner intentionally uses bronze partitions as the source of truth for availability and does not infer month availability from source filenames.
 
+Current backfill behavior:
+
+- `plan-backfill` is read-only and does not reload data by itself.
+- A month-scoped backfill execution command is not implemented yet.
+- Today, operators use the planner to identify which months are available in bronze, then perform any required historical rebuild manually before rerunning the pipeline.
+
 ## Configuration
 
 ### ETL Environment Variables
@@ -308,6 +320,8 @@ uv build
 | `airflow-apiserver` is unhealthy | The running container is still using an outdated healthcheck or the stack was not recreated after Compose changes | Restart the affected Airflow services or recreate the stack with `docker compose -f airflow/docker-compose.yaml down` followed by `docker compose -f airflow/docker-compose.yaml up -d` |
 | dbt fails with `Credentials in profile ... invalid` | The dbt container is running with stale or incomplete connection environment variables | Restart `airflow-scheduler`, `airflow-dag-processor`, `airflow-worker`, and `airflow-apiserver` so the latest DAG configuration is loaded |
 | The DAG runs but no rows are newly ingested | Bronze ingestion deduplicates source files by content digest, so identical payloads are treated as already processed | Add a genuinely new file or intentionally correct an existing file and rerun the pipeline |
+| Bronze or silver metadata is missing | The pipeline no longer has prior run state to compare against | Restore the metadata file if you have it, or rerun intentionally from the remaining source-of-truth files; a missing metadata file is treated like a fresh state |
+| Bronze or silver metadata is corrupted | The metadata JSON cannot be parsed | Fix or remove the corrupted metadata file and rerun; unlike a missing file, corrupted metadata fails loudly rather than being ignored |
 | Status email is not sent | SMTP settings are incomplete or the mail provider rejected authentication | Verify the `PIPELINE_EMAIL_*` settings in `airflow/.env`; for Gmail, use an app password rather than a primary account password |
 | Airflow or Postgres does not start on the expected host port | Another local service is already bound to `8080` or `5432` | Stop the conflicting service or change the host-side port mapping in `airflow/docker-compose.yaml` |
 
@@ -315,6 +329,7 @@ uv build
 
 - Intended for scheduled batch execution with operator review of Airflow task state and email notifications.
 - The repository includes basic run-status email alerts for success and failure outcomes.
+- If email is disabled or misconfigured, the notification step is skipped or fails independently; email delivery is not treated as a report-completion guarantee.
 - It does not implement formal SLA/SLO tracking, paging escalation, or on-call support.
 - Recovery is based on deterministic reruns after the underlying issue is corrected.
 
@@ -322,7 +337,8 @@ uv build
 
 FX assumption:
 
-- GBP amounts are normalized with the 2024 ECB annual average series `EXR.A.GBP.EUR.SP00.A` = `0.8466166015625` GBP per EUR.
+- `GBP` amounts are normalized with the 2024 ECB annual average series `EXR.A.GBP.EUR.SP00.A` = `0.8466166015625` GBP per EUR.
+- That assumption is hardcoded in `monthly_partner_premiums.sql` for this repository and applies only to `GBP` to `EUR` normalization.
 - Equivalent practical conversion in the mart: `1 GBP ≈ 1.1811722073 EUR`.
 - Because all business timestamps in the provided sample fall in 2024, the repository uses one documented 2024 reference rate instead of introducing a separate historical FX ingestion workflow.
 
@@ -340,14 +356,15 @@ Amount-quality assumption:
 - Late-arriving records are handled on the next run; there is no separate late-data workflow.
 - The export step assumes the dbt gold relation already exists.
 - Bronze timestamp enrichment expects the sample-style `created_at` format used by this dataset.
+- The architecture and Airflow task-flow diagrams are embedded as external images for submission convenience rather than generated from local source during README render.
 
 ## If This Moved To Production
 
 The first changes I would make are:
 
-- move bronze and silver run metadata from filesystem state into a transactional metadata store
-- replace the fixed FX assumption with provider-tracked historical reference data joined by business date
-- add orchestration safeguards around concurrency, alerting, and failure recovery rather than relying on sequential local execution discipline
+- move bronze and silver run metadata from filesystem state into a transactional metadata store such as PostgreSQL or SQLite so run state and recovery history are queryable and less fragile than flat files
+- replace the fixed FX assumption with provider-tracked historical reference data, for example ECB daily rates, joined by business date and stored with provider, effective date, and ingestion lineage
+- add orchestration safeguards around concurrency, alerting, and failure recovery, such as single-run locking, explicit rerun controls, and escalation beyond basic email notification
 
 ## Development Notes
 
