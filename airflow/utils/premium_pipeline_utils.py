@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from airflow.providers.docker.operators.docker import DockerOperator
+from airflow.task.trigger_rule import TriggerRule
 from docker.types import Mount
 
 logger = logging.getLogger(__name__)
@@ -92,6 +93,34 @@ db_environment = {
     "PIPELINE_GOLD_MONTHLY_PARTNER_PREMIUM_SCHEMA": marts_schema,
 }
 
+email_environment = {
+    **db_environment,
+    "PIPELINE_SEND_EMAIL": os.environ.get("PIPELINE_SEND_EMAIL", "false"),
+    "PIPELINE_EMAIL_HOST": os.environ.get("PIPELINE_EMAIL_HOST", ""),
+    "PIPELINE_EMAIL_PORT": os.environ.get("PIPELINE_EMAIL_PORT", "587"),
+    "PIPELINE_EMAIL_USERNAME": os.environ.get("PIPELINE_EMAIL_USERNAME", ""),
+    "PIPELINE_EMAIL_PASSWORD": os.environ.get("PIPELINE_EMAIL_PASSWORD", ""),
+    "PIPELINE_EMAIL_FROM": os.environ.get("PIPELINE_EMAIL_FROM", ""),
+    "PIPELINE_EMAIL_TO": os.environ.get("PIPELINE_EMAIL_TO", ""),
+    "PIPELINE_EMAIL_USE_TLS": os.environ.get("PIPELINE_EMAIL_USE_TLS", "true"),
+    "PIPELINE_EMAIL_DAG_ID": "{{ dag.dag_id }}",
+    "PIPELINE_EMAIL_RUN_ID": "{{ run_id }}",
+    "PIPELINE_EMAIL_PIPELINE_STATE": (
+        "{{ dag_run.get_task_instance('run_premium_pipeline').state if dag_run else 'unknown' }}"
+    ),
+    "PIPELINE_EMAIL_DBT_STATE": (
+        "{{ dag_run.get_task_instance('run_dbt_export').state if dag_run else 'unknown' }}"
+    ),
+    "PIPELINE_EMAIL_EXPORT_STATE": (
+        "{{ dag_run.get_task_instance('run_csv_export').state if dag_run else 'unknown' }}"
+    ),
+    "PIPELINE_EMAIL_EXPORT_PATH": (
+        "{{ '/app/output/gold/monthly_partner_premium_summary.csv' "
+        "if dag_run and dag_run.get_task_instance('run_csv_export').state == 'success' "
+        "else '' }}"
+    ),
+}
+
 dbt_environment = {
     **db_environment,
     "DBT_STAGING_SCHEMA": staging_schema,
@@ -157,6 +186,7 @@ def build_docker_task(
     environment,
     command=None,
     mounts=None,
+    trigger_rule=TriggerRule.ALL_SUCCESS,
 ):
     return DockerOperator(
         task_id=task_id,
@@ -170,4 +200,5 @@ def build_docker_task(
         xcom_all=False,
         environment=environment,
         mounts=mounts,
+        trigger_rule=trigger_rule,
     )

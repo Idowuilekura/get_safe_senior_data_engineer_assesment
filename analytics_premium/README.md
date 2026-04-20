@@ -10,6 +10,10 @@ This dbt project models premium transaction data through a layered warehouse wor
 
 The project follows a `staging`, `intermediate`, and `marts` layering strategy. `staging` is the source-aligned entry layer that standardizes the upstream transaction shape while preserving a deterministic technical key for lineage. `intermediate` is the trusted transactional layer where records are classified into accepted and rejected paths, making data quality handling explicit and auditable without over-fragmenting the model graph. `marts` presents the dimensional and aggregate layer, separating facts from dimensions so reporting models remain clear and reusable.
 
+The reporting layer exposes two deliberate outputs. `monthly_partner_premiums` is the finance-facing export mart and normalizes processed GBP transactions into EUR using the documented 2024 ECB annual-average reference rate. `monthly_partner_premiums_by_currency` is the audit companion mart and preserves processed monthly totals in source currency.
+
+The quality layer treats non-positive transaction amounts as rejected exceptions. This is an explicit reconciliation rule for the case study rather than a universal insurance rule: public Getsafe pricing makes low positive premiums plausible, while a processed premium transaction with `amount <= 0` is modeled here as an exception rather than earned premium. The sample data supports that cutoff as well: it contains no zero-value rows, but it does contain a small number of negative processed amounts.
+
 The fact table is designed at a transaction grain, with one row per transaction. It does not aggregate data yet, which keeps the model flexible for downstream consumers that may need different rollup levels. In this design, `amount` is treated as a measure rather than part of the business key.
 
 The surrogate key strategy is deterministic so the pipeline can be rerun safely without creating duplicate business events. The transaction keying approach is anchored on `transaction_id`; in the current implementation, the upstream transaction surrogate key is generated deterministically from `transaction_id` and `charged_partner`, which keeps reruns predictable while matching the available source shape.
@@ -18,7 +22,7 @@ The dimensional layer keeps descriptive context outside the fact table. `dim_par
 
 The incremental merge strategy in the accepted transactional layer supports updates such as status changes while preserving idempotency during reruns. This design favors reliability and reuse over premature complexity, avoids early aggregation, and leaves room for future marts or reporting models to build on a stable foundation.
 
-Duplicate handling is explicit rather than implicit. `staging` remains reconcilable to the source-facing dataset shape, while `intermediate` classifies records into accepted and rejected paths. Rejected rows capture duplicate business keys, duplicate surrogate keys, and records missing required dimensional attributes in a single audit model, which keeps the pipeline lean while preserving a clear operational trail for follow-up.
+Duplicate handling is explicit rather than implicit. `staging` remains reconcilable to the source-facing dataset shape, while `intermediate` classifies records into accepted and rejected paths. Rejected rows capture duplicate business keys, duplicate surrogate keys, missing required attributes, and non-positive amount exceptions in a single audit model, which keeps the pipeline lean while preserving a clear operational trail for follow-up.
 
 ## Docker
 

@@ -90,3 +90,14 @@ def test_gold_export_command_prints_csv_path(tmp_path: Path, monkeypatch, capsys
     captured = capsys.readouterr()
     assert exit_code == 0
     assert captured.out.strip() == str(expected_path)
+
+
+def test_send_run_email_command_invokes_email_sender(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(container_cli, "configure_logging", lambda: None)
+    monkeypatch.setattr(container_cli, "send_status_email", lambda: True)
+
+    exit_code = container_cli.main(["send-run-email"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out == ""

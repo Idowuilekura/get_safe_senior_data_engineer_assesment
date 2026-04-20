@@ -67,3 +67,28 @@ models:
       - name: total_premium
         tests:
           - not_null
+
+  - name: monthly_partner_premiums_by_currency
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - partner
+              - month
+              - currency
+    columns:
+      - name: partner
+        tests:
+          - not_null
+      - name: month
+        tests:
+          - not_null
+      - name: currency
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['EUR', 'GBP']
+      - name: total_premium
+        tests:
+          - not_null
