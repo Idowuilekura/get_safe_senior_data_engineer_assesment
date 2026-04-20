@@ -29,6 +29,17 @@ def is_matching_file(
     dataset_type: str,
     ext_type: str,
 ) -> bool:
+    """Check whether a file matches the expected pipeline naming pattern.
+
+    Args:
+        filename: File name to evaluate.
+        insur_type: Insurance type token expected in the file name.
+        dataset_type: Dataset type token expected in the file name.
+        ext_type: Expected file extension.
+
+    Returns:
+        True if the file matches the expected pattern, otherwise False.
+    """
     return insur_type in filename and dataset_type in filename and filename.endswith(ext_type)
 
 
@@ -37,6 +48,16 @@ def sort_files_by_date(
     ext_type: str,
     time_column: str = "created_at",
 ) -> list[str]:
+    """Sort source files by the earliest date inferred from content or filename.
+
+    Args:
+        files: Source file paths to sort.
+        ext_type: File extension used for filename parsing fallback.
+        time_column: Payload timestamp column to inspect first.
+
+    Returns:
+        Deterministically sorted file path list.
+    """
     return sorted(
         files,
         key=lambda file_path: (
@@ -57,6 +78,21 @@ def list_source_files(
     ext_type: str,
     time_column: str = "created_at",
 ) -> list[str]:
+    """List matching source files from a landing directory.
+
+    Args:
+        directory_path: Source directory to scan.
+        insur_type: Insurance type token expected in file names.
+        dataset_type: Dataset type token expected in file names.
+        ext_type: Expected file extension.
+        time_column: Payload timestamp column used for sorting.
+
+    Returns:
+        Sorted list of matching source file paths.
+
+    Raises:
+        FileNotFoundError: If the source directory does not exist.
+    """
     directory = Path(directory_path)
 
     if not directory.exists():
@@ -76,6 +112,14 @@ def list_source_files(
 
 
 def describe_source_file(file_path: str) -> SourceFileState:
+    """Collect size, mtime, and digest state for a source file.
+
+    Args:
+        file_path: Source file path.
+
+    Returns:
+        Metadata snapshot for the file.
+    """
     file_stat = Path(file_path).stat()
     return {
         "size_bytes": file_stat.st_size,
@@ -85,10 +129,26 @@ def describe_source_file(file_path: str) -> SourceFileState:
 
 
 def describe_source_files(file_paths: list[str]) -> SourceFileStates:
+    """Collect metadata state for multiple source files.
+
+    Args:
+        file_paths: Source file paths to describe.
+
+    Returns:
+        Mapping of file paths to file state snapshots.
+    """
     return {file_path: describe_source_file(file_path) for file_path in file_paths}
 
 
 def calculate_source_file_digest(file_path: str) -> str:
+    """Calculate a stable content digest for a source file.
+
+    Args:
+        file_path: Source file path.
+
+    Returns:
+        SHA-256 digest hex string.
+    """
     digest = hashlib.sha256()
 
     with Path(file_path).open("rb") as source_file:
@@ -103,6 +163,20 @@ def extract_source_file_date(
     ext_type: str,
     time_column: str = "created_at",
 ) -> tuple[int, int, int]:
+    """Extract the earliest business date for a source file.
+
+    Args:
+        file_path: Source file path.
+        ext_type: File extension used for filename parsing fallback.
+        time_column: Payload timestamp column to inspect first.
+
+    Returns:
+        Earliest available year, month, and day tuple.
+
+    Raises:
+        ValueError: If neither payload timestamps nor the filename provide a
+            parseable date.
+    """
     payload_datetimes = _try_extract_source_file_payload_datetimes(
         file_path=file_path,
         time_column=time_column,
@@ -126,6 +200,16 @@ def extract_source_file_year_month(
     ext_type: str,
     time_column: str = "created_at",
 ) -> tuple[int, int]:
+    """Extract the primary year and month for a source file.
+
+    Args:
+        file_path: Source file path.
+        ext_type: File extension used for filename parsing fallback.
+        time_column: Payload timestamp column to inspect first.
+
+    Returns:
+        Year and month tuple derived from the earliest available business date.
+    """
     year, month, _ = extract_source_file_date(
         file_path=file_path,
         ext_type=ext_type,
@@ -139,6 +223,20 @@ def extract_source_file_year_months(
     ext_type: str,
     time_column: str = "created_at",
 ) -> set[tuple[int, int]]:
+    """Extract all year-month pairs represented by a source file.
+
+    Args:
+        file_path: Source file path.
+        ext_type: File extension used for filename parsing fallback.
+        time_column: Payload timestamp column to inspect first.
+
+    Returns:
+        Set of year-month tuples represented in the file.
+
+    Raises:
+        ValueError: If neither payload timestamps nor the filename provide a
+            parseable date.
+    """
     payload_datetimes = _try_extract_source_file_payload_datetimes(
         file_path=file_path,
         time_column=time_column,

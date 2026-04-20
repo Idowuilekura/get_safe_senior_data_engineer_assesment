@@ -69,6 +69,14 @@ class EmailSettings:
 
 
 def load_pipeline_summary(result_path: str | Path) -> dict[str, Any] | None:
+    """Load a persisted pipeline summary if it exists.
+
+    Args:
+        result_path: Path to the pipeline summary JSON file.
+
+    Returns:
+        Parsed summary payload, or None when the file does not exist.
+    """
     path = Path(result_path)
     if not path.exists():
         return None
@@ -86,6 +94,20 @@ def build_status_email(
     summary: dict[str, Any] | None,
     export_path: str | None,
 ) -> tuple[str, str]:
+    """Build the email subject and body for a pipeline run.
+
+    Args:
+        dag_id: Airflow DAG identifier.
+        run_id: Airflow run identifier.
+        pipeline_state: Task state for the ETL step.
+        dbt_state: Task state for the dbt step.
+        export_state: Task state for the export step.
+        summary: Optional persisted pipeline summary payload.
+        export_path: Optional host-visible export path.
+
+    Returns:
+        Tuple of email subject and plain-text body.
+    """
     has_new_data = bool(summary.get("has_new_data")) if summary else False
     rows_written = summary.get("rows_written") if summary else None
     silver_status = summary.get("silver_status") if summary else None
@@ -149,6 +171,15 @@ def build_status_email(
 
 
 def send_status_email() -> bool:
+    """Send a pipeline status email when email delivery is configured.
+
+    Returns:
+        True if an email was sent successfully, otherwise False.
+
+    Raises:
+        ValueError: If required SMTP fields are unexpectedly missing after
+            validation.
+    """
     settings = EmailSettings.from_env()
     if not settings.enabled:
         print("Skipping email: PIPELINE_SEND_EMAIL is false.")

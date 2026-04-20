@@ -14,6 +14,16 @@ def _current_date() -> date:
 
 
 def enrich_timestamp(df: pl.LazyFrame, time_column: str, new_time_column: str) -> pl.LazyFrame:
+    """Parse a source timestamp column and derive partition fields.
+
+    Args:
+        df: Source lazyframe.
+        time_column: String timestamp column to parse.
+        new_time_column: Name of the parsed timestamp column to create.
+
+    Returns:
+        LazyFrame with parsed timestamp plus year, month, and day columns.
+    """
     parsed_timestamp = pl.col(time_column).str.to_datetime("%m/%d/%Y %H:%M:%S")
 
     return df.with_columns(
@@ -27,6 +37,14 @@ def enrich_timestamp(df: pl.LazyFrame, time_column: str, new_time_column: str) -
 
 
 def get_days_month_df(df: pl.LazyFrame) -> dict[int, dict[int, list[int]]]:
+    """Build a year-month-day index from a bronze dataset.
+
+    Args:
+        df: LazyFrame containing year, month, and day columns.
+
+    Returns:
+        Nested mapping of years to months to sorted day lists.
+    """
     years_months_days = df.select(["year", "month", "day"]).unique().sort(["year", "month", "day"])
 
     result: dict[int, dict[int, list[int]]] = {}
@@ -41,6 +59,14 @@ def get_days_month_df(df: pl.LazyFrame) -> dict[int, dict[int, list[int]]]:
 
 
 def find_missing_days(data: dict[int, dict[int, list[int]]]) -> dict[int, dict[int, list[int]]]:
+    """Compute missing calendar days within observed months.
+
+    Args:
+        data: Nested mapping of years to months to observed day lists.
+
+    Returns:
+        Nested mapping of years to months to missing day lists.
+    """
     missing: dict[int, dict[int, list[int]]] = {}
     current_date = _current_date()
 
@@ -65,6 +91,16 @@ def extract_year_month_globs(
     output_path: str,
     file_pattern: str = "*.parquet",
 ) -> list[str]:
+    """Build parquet glob paths from a year-month mapping.
+
+    Args:
+        data: Nested mapping of years to months to any value payload.
+        output_path: Bronze output root path.
+        file_pattern: File glob pattern to append for each partition.
+
+    Returns:
+        List of parquet glob paths.
+    """
     base_path = Path(output_path)
 
     return [
@@ -75,6 +111,15 @@ def extract_year_month_globs(
 
 
 def enrich_time_features(df: FrameT, time_column: str) -> FrameT:
+    """Add reusable calendar features to a timestamped frame.
+
+    Args:
+        df: Polars frame or lazyframe containing the timestamp column.
+        time_column: Timestamp column used to derive features.
+
+    Returns:
+        Frame with additional calendar feature columns.
+    """
     timestamp_column = pl.col(time_column)
 
     return df.with_columns(
