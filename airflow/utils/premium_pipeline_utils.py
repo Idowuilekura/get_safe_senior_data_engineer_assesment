@@ -81,6 +81,9 @@ docker_mount = DockerMount(host_base_dir=host_project_dir)
 staging_schema = os.environ.get("DBT_STAGING_SCHEMA", "staging")
 intermediate_schema = os.environ.get("DBT_INTERMEDIATE_SCHEMA", "intermediate")
 marts_schema = os.environ.get("DBT_MARTS_SCHEMA", "analytics")
+host_export_path = str(
+    Path(docker_mount.output_source) / "gold" / "monthly_partner_premium_summary.csv"
+)
 
 db_environment = {
     "DATABASE_TYPE": db_config.database_type,
@@ -115,7 +118,7 @@ email_environment = {
         "{{ dag_run.get_task_instance('run_csv_export').state if dag_run else 'unknown' }}"
     ),
     "PIPELINE_EMAIL_EXPORT_PATH": (
-        "{{ '/app/output/gold/monthly_partner_premium_summary.csv' "
+        "{{ '" + host_export_path + "' "
         "if dag_run and dag_run.get_task_instance('run_csv_export').state == 'success' "
         "else '' }}"
     ),
@@ -123,9 +126,18 @@ email_environment = {
 
 dbt_environment = {
     **db_environment,
+    "DBT_TYPE": "postgres",
+    "DBT_HOST": db_config.database_host,
+    "DBT_PORT": db_config.database_port,
+    "DBT_USER": db_config.database_user,
+    "DBT_PASSWORD": db_config.database_password,
+    "DBT_DATABASE": db_config.database_name,
+    "DBT_SCHEMA": os.environ.get("DBT_SCHEMA", "public"),
+    "DBT_TARGET": os.environ.get("DBT_TARGET", "default"),
     "DBT_STAGING_SCHEMA": staging_schema,
     "DBT_INTERMEDIATE_SCHEMA": intermediate_schema,
     "DBT_MARTS_SCHEMA": marts_schema,
+    "DBT_SOURCE_SCHEMA": os.environ.get("DBT_SOURCE_SCHEMA", "public"),
     "DBT_SOURCE_IDENTIFIER": "premium_transaction",
 }
 

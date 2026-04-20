@@ -20,7 +20,7 @@ The surrogate key strategy is deterministic so the pipeline can be rerun safely 
 
 The dimensional layer keeps descriptive context outside the fact table. `dim_partner` captures partner attributes for analysis by partner, while `dim_date` provides reusable calendar fields that can support filtering, grouping, and time-based reporting across multiple use cases. This separation keeps the fact model focused on the transaction event itself.
 
-The incremental merge strategy in the accepted transactional layer supports updates such as status changes while preserving idempotency during reruns. This design favors reliability and reuse over premature complexity, avoids early aggregation, and leaves room for future marts or reporting models to build on a stable foundation.
+The accepted transactional layer is designed to remain stable under reruns and downstream reuse. In the current repository flow, dbt reads from a trusted transaction table that is refreshed before model execution, which keeps the analytical layer aligned to the latest trusted base state without requiring dbt itself to own silver-layer merge logic. This design favors reliability and reuse over premature complexity, avoids early aggregation, and leaves room for future marts or reporting models to build on a stable foundation.
 
 Duplicate handling is explicit rather than implicit. `staging` remains reconcilable to the source-facing dataset shape, while `intermediate` classifies records into accepted and rejected paths. Rejected rows capture duplicate business keys, duplicate surrogate keys, missing required attributes, and non-positive amount exceptions in a single audit model, which keeps the pipeline lean while preserving a clear operational trail for follow-up.
 

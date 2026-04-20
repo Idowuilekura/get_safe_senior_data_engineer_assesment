@@ -104,21 +104,29 @@ def build_status_email(
     lines = [
         f"DAG: {dag_id}",
         f"Run ID: {run_id}",
+        "",
+        "Status:",
         f"Overall status: {overall_status}",
-        f"Pipeline task state: {pipeline_state or 'unknown'}",
-        f"dbt task state: {dbt_state or 'unknown'}",
-        f"CSV export task state: {export_state or 'unknown'}",
         f"New data written: {'yes' if has_new_data else 'no'}",
+        "",
+        "Task results:",
+        f"Pipeline: {pipeline_state or 'unknown'}",
+        f"dbt: {dbt_state or 'unknown'}",
+        f"CSV export: {export_state or 'unknown'}",
     ]
 
+    metric_lines: list[str] = []
     if rows_written is not None:
-        lines.append(f"Rows written: {rows_written}")
+        metric_lines.append(f"Rows written: {rows_written}")
     if silver_status:
-        lines.append(f"Silver status: {silver_status}")
+        metric_lines.append(f"Silver status: {silver_status}")
     if table_name:
-        lines.append(f"Target table: {table_name}")
+        metric_lines.append(f"Target table: {table_name}")
+    if metric_lines:
+        lines.extend(("", "Key metrics:", *metric_lines))
+
     if export_path:
-        lines.append(f"Export path: {export_path}")
+        lines.extend(("", "Artifacts:", f"Export path: {export_path}"))
     if summary:
         concise_summary = {
             "command": summary.get("command"),

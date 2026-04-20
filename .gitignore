@@ -80,6 +80,7 @@ Thumbs.db
 data/
 output/
 logs/
+airflow_stuff/
 *.parquet
 *.feather
 *.arrow

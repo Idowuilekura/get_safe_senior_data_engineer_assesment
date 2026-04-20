@@ -77,9 +77,5 @@ with DAG(
 
     prepare_output >> run_pipeline >> collect_pipeline_result_task >> continue_downstream_processing
     continue_downstream_processing >> run_dbt >> run_csv_export
-    [
-        run_pipeline,
-        collect_pipeline_result_task,
-        run_dbt,
-        run_csv_export,
-    ] >> send_status_email
+    continue_downstream_processing >> send_status_email
+    run_csv_export >> send_status_email
