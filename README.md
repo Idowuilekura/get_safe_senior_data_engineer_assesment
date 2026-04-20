@@ -158,8 +158,18 @@ Airflow task graph:
 
 ![Airflow DAG graph view](https://github.com/user-attachments/assets/afa001c2-734d-4639-88fd-09d443d04e8e)
 
-1. Review `airflow/.env` before running the stack.
-2. Put input files in `airflow/data/`.
+1. Review `airflow/.env` before startup.
+
+Required:
+- `AIRFLOW_HOST_ROOT_DIR`
+
+Optional:
+- `PIPELINE_EMAIL_*` for run-status email notifications
+
+2. Place the input JSON file(s) in `airflow/data/`.
+
+The Airflow stack reads raw transaction files from this mounted directory.
+
 3. Start Airflow:
 
 ```bash
