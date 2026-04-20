@@ -25,6 +25,17 @@ def run_pipeline(
     config: PipelineConfig,
     database_writer: DatabaseWriter,
 ) -> dict[str, MetadataDict | None]:
+    """Run the bronze-to-silver pipeline.
+
+    Args:
+        config: Pipeline configuration values resolved from environment or
+            defaults.
+        database_writer: Database writer implementation for the trusted table.
+
+    Returns:
+        Dictionary containing the latest bronze and silver metadata payloads for
+        the run.
+    """
     (
         bronze_df,
         existing_bronze_metadata,

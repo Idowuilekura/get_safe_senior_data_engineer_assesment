@@ -15,6 +15,14 @@ from pipeline.utils.partitions import enrich_time_features, extract_year_month_g
 def get_pending_bronze_partitions(
     metadata: MetadataDict | None,
 ) -> dict[str, dict[str, list[int]]]:
+    """Extract pending bronze partitions from a metadata payload.
+
+    Args:
+        metadata: Bronze metadata payload or None.
+
+    Returns:
+        Pending year-month-day structure, or an empty mapping when none exists.
+    """
     if not metadata:
         return {}
 
@@ -23,6 +31,14 @@ def get_pending_bronze_partitions(
 
 
 def has_pending_bronze_partitions(metadata: MetadataDict | None) -> bool:
+    """Report whether bronze metadata still contains pending partitions.
+
+    Args:
+        metadata: Bronze metadata payload or None.
+
+    Returns:
+        True when pending bronze partitions are present, otherwise False.
+    """
     return bool(get_pending_bronze_partitions(metadata))
 
 
@@ -30,6 +46,16 @@ def resolve_silver_metadata_source(
     current_bronze_metadata: MetadataDict | None,
     existing_bronze_metadata: MetadataDict | None,
 ) -> MetadataDict | None:
+    """Choose the bronze metadata payload that should drive the silver step.
+
+    Args:
+        current_bronze_metadata: Metadata produced in the current run.
+        existing_bronze_metadata: Previously persisted bronze metadata.
+
+    Returns:
+        The metadata payload that still contains pending bronze partitions, or
+        None when no silver work remains.
+    """
     if has_pending_bronze_partitions(current_bronze_metadata):
         return current_bronze_metadata
 
@@ -45,6 +71,18 @@ def build_silver_lazyframe_from_bronze(
     time_column: str = "created_at_timestamp",
     write_mode: DatabaseWriteMode = "replace",
 ) -> pl.LazyFrame | None:
+    """Build the silver lazyframe from the selected bronze partitions.
+
+    Args:
+        bronze_metadata: Bronze metadata that defines pending partitions.
+        bronze_output_path: Root bronze parquet directory.
+        time_column: Timestamp column used for additional time features.
+        write_mode: Database write mode that determines partition selection.
+
+    Returns:
+        LazyFrame enriched with time features, or None when no parquet paths are
+        resolved.
+    """
     parquet_paths = resolve_bronze_parquet_paths(
         bronze_metadata=bronze_metadata,
         bronze_output_path=bronze_output_path,
@@ -62,6 +100,17 @@ def resolve_bronze_parquet_paths(
     bronze_output_path: str,
     write_mode: DatabaseWriteMode = "replace",
 ) -> list[str]:
+    """Resolve bronze parquet globs to read for the silver step.
+
+    Args:
+        bronze_metadata: Bronze metadata payload.
+        bronze_output_path: Root bronze parquet directory.
+        write_mode: Database write mode that determines whether all bronze data
+            or only pending partitions should be scanned.
+
+    Returns:
+        List of parquet paths or globs for the silver read.
+    """
     pending_partitions = get_pending_bronze_partitions(bronze_metadata)
     if not pending_partitions:
         return []
@@ -83,6 +132,19 @@ def build_silver_metadata_payload(
     reason: str | None = None,
     write_mode: DatabaseWriteMode = "replace",
 ) -> MetadataDict:
+    """Build the persisted silver metadata payload.
+
+    Args:
+        status: Silver run status.
+        source_bronze_metadata: Bronze metadata that fed the silver step.
+        rows_written: Number of rows written to the trusted table.
+        table_name: Trusted table name.
+        reason: Optional skip reason.
+        write_mode: Database write mode used for the trusted table write.
+
+    Returns:
+        Silver metadata payload for persistence and reporting.
+    """
     source_bronze_metadata = source_bronze_metadata or {}
     pending_partitions = get_pending_bronze_partitions(source_bronze_metadata)
 
@@ -106,6 +168,16 @@ def write_silver_metadata(
     silver_metadata_file_name: str,
     metadata: MetadataDict,
 ) -> MetadataDict:
+    """Persist silver metadata and return the payload.
+
+    Args:
+        silver_metadata_path: Directory where silver metadata is stored.
+        silver_metadata_file_name: Metadata filename.
+        metadata: Payload to persist.
+
+    Returns:
+        The same metadata payload after it is written.
+    """
     write_metadata_file(
         metadata_folder_path=silver_metadata_path,
         metadata_file_name=silver_metadata_file_name,
@@ -127,6 +199,24 @@ def write_silver_data_out(
     write_mode: DatabaseWriteMode = "replace",
     merge_keys: Sequence[str] | None = None,
 ) -> tuple[MetadataDict, MetadataDict]:
+    """Write silver data to the trusted table and update metadata state.
+
+    Args:
+        df: Silver lazyframe to write.
+        bronze_metadata_path: Bronze metadata directory.
+        bronze_metadata_dict: Bronze metadata that fed the write.
+        bronze_metadata_file_name: Bronze metadata filename.
+        silver_metadata_path: Silver metadata directory.
+        silver_metadata_file_name: Silver metadata filename.
+        database_writer: Database writer implementation.
+        table_name: Trusted table name.
+        batch_size: Write batch size.
+        write_mode: Database write mode.
+        merge_keys: Optional merge keys for upsert mode.
+
+    Returns:
+        Tuple of persisted silver metadata and updated bronze metadata.
+    """
     rows_written = database_writer.write_lazyframe(
         lf=df,
         request=WriteRequest(

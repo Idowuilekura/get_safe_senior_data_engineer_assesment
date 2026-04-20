@@ -49,6 +49,22 @@ def files_to_read(
     list[str],
     SourceFileStates,
 ]:
+    """Determine which source files should be read into bronze.
+
+    Args:
+        data_folder: Source landing directory.
+        metadata_folder_path: Bronze metadata directory.
+        metadata_file_name: Bronze metadata filename.
+        insur_type: Insurance type token expected in file names.
+        dataset_type: Dataset type token expected in file names.
+        ext_type: Expected file extension.
+        time_column: Payload timestamp column used for date inference.
+
+    Returns:
+        Tuple containing existing bronze metadata, prior schema, changed file
+        paths, file paths to read now, ignored duplicate file paths, and current
+        source file states.
+    """
     source_files = list_source_files(
         directory_path=data_folder,
         insur_type=insur_type,
@@ -147,6 +163,15 @@ def read_data_jsons(
     file_paths: list[str],
     schema: SchemaDict | None = None,
 ) -> pl.LazyFrame | None:
+    """Read source JSON files into a single lazyframe.
+
+    Args:
+        file_paths: JSON file paths to read.
+        schema: Optional schema override from prior bronze state.
+
+    Returns:
+        Concatenated lazyframe, or None when no files are provided.
+    """
     if not file_paths:
         return None
 
@@ -173,6 +198,22 @@ def read_all_files(
     list[str],
     SourceFileStates,
 ]:
+    """Resolve and read the current bronze input set.
+
+    Args:
+        data_folder: Source landing directory.
+        metadata_folder_path: Bronze metadata directory.
+        metadata_file_name: Bronze metadata filename.
+        insur_type: Insurance type token expected in file names.
+        dataset_type: Dataset type token expected in file names.
+        ext_type: Expected file extension.
+        time_column: Payload timestamp column used for date inference.
+
+    Returns:
+        Tuple containing the bronze lazyframe, metadata context, changed file
+        paths, files read, ignored duplicate files, and current source file
+        states.
+    """
     (
         metadata_dict,
         old_schema,
@@ -209,6 +250,18 @@ def build_bronze_metadata_payload(
     year_month_read: dict[int, dict[int, list[int]]],
     missing_days: dict[int, dict[int, list[int]]],
 ) -> MetadataDict:
+    """Build the persisted bronze metadata payload.
+
+    Args:
+        existing_metadata: Prior bronze metadata, if any.
+        df_schema: Schema observed in the newly written bronze dataset.
+        source_file_states: Current source file state snapshots.
+        year_month_read: Nested mapping of touched year-month-day values.
+        missing_days: Nested mapping of missing day values for touched months.
+
+    Returns:
+        Bronze metadata payload for persistence.
+    """
     existing_metadata = existing_metadata or {}
     merged_file_states = _merge_source_file_states(existing_metadata, source_file_states)
 
@@ -234,6 +287,24 @@ def write_raw_data_bronze_out(
     time_column: str = "created_at",
     new_time_column: str = "created_at_timestamp",
 ) -> MetadataDict | None:
+    """Write bronze parquet output and update bronze metadata.
+
+    Args:
+        df: Bronze input lazyframe.
+        metadata_dict: Existing bronze metadata, if any.
+        source_file_states: Current source file state snapshots.
+        changed_or_new_files: Changed or newly discovered file paths.
+        list_data_read: File paths read in this bronze cycle.
+        data_folder_out: Bronze output root directory.
+        metadata_path: Bronze metadata directory.
+        metadata_file_name: Bronze metadata filename.
+        ext_type: Expected file extension.
+        time_column: Source timestamp column.
+        new_time_column: Parsed timestamp column to create.
+
+    Returns:
+        Persisted bronze metadata payload, or None when there is no input frame.
+    """
     if df is None:
         return None
 
@@ -305,6 +376,18 @@ def acknowledge_duplicate_source_files(
     metadata_path: str,
     metadata_file_name: str,
 ) -> MetadataDict | None:
+    """Persist duplicate-file state when no bronze write occurs.
+
+    Args:
+        existing_metadata: Existing bronze metadata, if any.
+        source_file_states: Current source file state snapshots.
+        metadata_path: Bronze metadata directory.
+        metadata_file_name: Bronze metadata filename.
+
+    Returns:
+        Updated bronze metadata payload, or None when there is no prior bronze
+        metadata to update.
+    """
     if existing_metadata is None:
         return None
 

@@ -28,6 +28,15 @@ DEFAULT_SILVER_METADATA_PATH = "output/silver"
 def build_full_etl_summary(
     result: Mapping[str, MetadataDict | None],
 ) -> dict[str, Any]:
+    """Build a compact ETL run summary for persistence and notifications.
+
+    Args:
+        result: Pipeline result payload containing bronze and silver metadata.
+
+    Returns:
+        A JSON-serializable summary describing whether new data was written and
+        the key silver write outcome fields.
+    """
     silver_metadata = result.get("silver_metadata") or {}
     rows_written = silver_metadata.get("rows_written")
     silver_was_skipped = silver_metadata.get("silver_was_skipped")
@@ -50,6 +59,15 @@ def build_full_etl_summary(
 
 
 def write_full_etl_summary(summary: Mapping[str, Any], destination: str | Path) -> Path:
+    """Persist a pipeline summary JSON file to disk.
+
+    Args:
+        summary: Summary payload to write.
+        destination: File path where the summary should be stored.
+
+    Returns:
+        The resolved output path that was written.
+    """
     output_path = Path(destination)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -57,6 +75,14 @@ def write_full_etl_summary(summary: Mapping[str, Any], destination: str | Path) 
 
 
 def run_full_etl_pipeline(result_path: str | None = None) -> bool:
+    """Run the end-to-end ETL pipeline and print whether new data was written.
+
+    Args:
+        result_path: Optional path for a persisted JSON run summary.
+
+    Returns:
+        True when the run wrote new trusted-table data, otherwise False.
+    """
     configure_logging()
 
     config = load_pipeline_config_from_env()
@@ -73,6 +99,11 @@ def run_full_etl_pipeline(result_path: str | None = None) -> bool:
 
 
 def run_gold_export() -> Path:
+    """Export the monthly premium mart to CSV.
+
+    Returns:
+        The path to the generated CSV file.
+    """
     configure_logging()
 
     csv_path = export_monthly_partner_premium_csv(
@@ -84,6 +115,11 @@ def run_gold_export() -> Path:
 
 
 def run_status_email() -> bool:
+    """Send the run-status email when email settings are configured.
+
+    Returns:
+        True if an email was sent, otherwise False.
+    """
     configure_logging()
     return send_status_email()
 
@@ -95,6 +131,18 @@ def run_plan_backfill(
     bronze_output_path: str = DEFAULT_BRONZE_OUTPUT_PATH,
     silver_metadata_path: str = DEFAULT_SILVER_METADATA_PATH,
 ) -> dict[str, Any]:
+    """Plan a month-level backfill from bronze partition availability.
+
+    Args:
+        start_month: Inclusive backfill start month in YYYY-MM format.
+        end_month: Inclusive backfill end month in YYYY-MM format.
+        bronze_output_path: Bronze output directory to inspect.
+        silver_metadata_path: Silver metadata directory to inspect.
+
+    Returns:
+        A JSON-serializable planning payload describing requested months,
+        bronze availability, and latest silver coverage.
+    """
     configure_logging()
 
     plan = build_backfill_plan(
@@ -108,6 +156,11 @@ def run_plan_backfill(
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser for the container entrypoint.
+
+    Returns:
+        A configured argument parser with all supported subcommands.
+    """
     parser = argparse.ArgumentParser(
         prog="premium-container",
         description="Run the premium pipeline container entrypoints.",
@@ -164,6 +217,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Run the container CLI.
+
+    Args:
+        argv: Optional command-line arguments. When omitted, argparse reads from
+            the active process arguments.
+
+    Returns:
+        Process exit code for the selected subcommand.
+    """
     parser = build_parser()
     args = parser.parse_args(argv)
 
