@@ -27,13 +27,7 @@ def test_build_backfill_plan_uses_bronze_partitions_and_latest_silver_metadata(
     silver_dir = tmp_path / "silver"
     silver_dir.mkdir()
     (silver_dir / "metadata.json").write_text(
-        (
-            '{'
-            '"source_bronze_year_month": {'
-            '"2024": {"6": [1, 2], "7": [1, 2], "8": [1] }'
-            "}"
-            "}"
-        ),
+        ('{"source_bronze_year_month": {"2024": {"6": [1, 2], "7": [1, 2], "8": [1] }}}'),
         encoding="utf-8",
     )
 
