@@ -20,10 +20,19 @@ models:
         tests:
           - not_null
           - unique
+      - name: currency
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['EUR', 'GBP']
       - name: charged_partner
         tests:
           - not_null
       - name: created_at
+        tests:
+          - not_null
+      - name: amount
         tests:
           - not_null
 
@@ -39,6 +48,9 @@ models:
         tests:
           - not_null
       - name: is_rejected
+        tests:
+          - not_null
+      - name: has_non_positive_amount
         tests:
           - not_null
       - name: rejection_reason

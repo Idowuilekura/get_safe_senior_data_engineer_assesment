@@ -41,12 +41,14 @@ select
     transaction_partner_sk_occurrences > 1 as has_duplicate_transaction_partner_key,
     charged_partner is null as has_missing_partner,
     created_at is null as has_missing_created_at,
+    amount <= 0 as has_non_positive_amount,
     (
         transaction_id is null
         or transaction_id_occurrences > 1
         or transaction_partner_sk_occurrences > 1
         or charged_partner is null
         or created_at is null
+        or amount <= 0
     ) as is_rejected,
     concat_ws(
         ',',
@@ -54,6 +56,7 @@ select
         case when transaction_id_occurrences > 1 then 'duplicate_transaction_id' end,
         case when transaction_partner_sk_occurrences > 1 then 'duplicate_transaction_partner_key' end,
         case when charged_partner is null then 'missing_partner' end,
-        case when created_at is null then 'missing_created_at' end
+        case when created_at is null then 'missing_created_at' end,
+        case when amount <= 0 then 'non_positive_amount' end
     ) as rejection_reason
 from profiled

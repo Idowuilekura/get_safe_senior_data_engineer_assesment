@@ -16,6 +16,7 @@ from utils.premium_pipeline_utils import (
     collect_pipeline_result,
     db_environment,
     dbt_environment,
+    email_environment,
     ensure_output_dir,
     mounts,
     should_continue_downstream_processing,
@@ -53,6 +54,7 @@ with DAG(
     run_dbt = build_docker_task(
         task_id="run_dbt_export",
         image="idowuilekura/analytics-premium-dbt:latest",
+        command="build",
         environment=dbt_environment,
     )
 
@@ -64,5 +66,20 @@ with DAG(
         mounts=mounts,
     )
 
+    send_status_email = build_docker_task(
+        task_id="send_status_email",
+        image="idowuilekura/premium-pipeline:latest",
+        command="send-run-email",
+        environment=email_environment,
+        mounts=mounts,
+        trigger_rule="all_done",
+    )
+
     prepare_output >> run_pipeline >> collect_pipeline_result_task >> continue_downstream_processing
     continue_downstream_processing >> run_dbt >> run_csv_export
+    [
+        run_pipeline,
+        collect_pipeline_result_task,
+        run_dbt,
+        run_csv_export,
+    ] >> send_status_email

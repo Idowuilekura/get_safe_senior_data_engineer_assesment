@@ -13,6 +13,7 @@ from export.monthly_partner_premium import (
     resolve_gold_relation_name,
 )
 from pipeline.adapters.factory import DatabaseWriterFactory
+from pipeline.email_report import send_status_email
 from pipeline.logging_config import configure_logging
 from pipeline.orchestration import run_pipeline
 from pipeline.settings import load_pipeline_config_from_env
@@ -79,6 +80,11 @@ def run_gold_export() -> Path:
     return csv_path
 
 
+def run_status_email() -> bool:
+    configure_logging()
+    return send_status_email()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="premium-container",
@@ -102,6 +108,10 @@ def build_parser() -> argparse.ArgumentParser:
         "gold-export",
         help="Export the monthly partner premium gold relation to CSV.",
     )
+    subparsers.add_parser(
+        "send-run-email",
+        help="Send a status email for the pipeline run when email is configured.",
+    )
     return parser
 
 
@@ -115,6 +125,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "gold-export":
         run_gold_export()
+        return 0
+
+    if args.command == "send-run-email":
+        run_status_email()
         return 0
 
     parser.error(f"Unsupported command: {args.command}")

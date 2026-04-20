@@ -22,6 +22,7 @@ select
     has_duplicate_transaction_partner_key,
     has_missing_partner,
     has_missing_created_at,
+    has_non_positive_amount,
     is_rejected,
     rejection_reason
 from {{ ref('premium_transaction_quality') }}
