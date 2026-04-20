@@ -2,63 +2,13 @@
 
 Production-oriented solution for the Getsafe Senior Data Engineer assessment.
 
-This repository implements a batch data pipeline for insurance premium transactions. It ingests raw JSON files, persists an operational bronze layer, writes a trusted transactional base table to PostgreSQL, builds warehouse models with dbt across `staging`, `intermediate`, and `marts`, and exports the business-facing monthly premium reconciliation report required by the case study.
+Batch pipeline for auditable monthly premium reconciliation reporting.
 
-## Table of Contents
+## Executive Summary
 
-- [Overview](#overview)
-- [Design Principles and Tradeoffs](#design-principles-and-tradeoffs)
-- [Business Context](#business-context)
-- [Problem Statement](#problem-statement)
-- [Input Data](#input-data)
-- [File Naming and Timestamp Rules](#file-naming-and-timestamp-rules)
-- [Expected Output](#expected-output)
-- [Architecture](#architecture)
-- [System Guarantees](#system-guarantees)
-- [Technology Choices](#technology-choices)
-- [Repository Structure](#repository-structure)
-- [Pipeline Stages](#pipeline-stages)
-- [Failure Modes and Recovery](#failure-modes-and-recovery)
-- [Observability](#observability)
-- [Local Setup](#local-setup)
-- [How to Run](#how-to-run)
-- [Container Images](#container-images)
-- [dbt Analytics Layer](#dbt-analytics-layer)
-- [Quality](#quality)
-- [Delivery and Release Flow](#delivery-and-release-flow)
-- [Assumptions](#assumptions)
-- [Future Improvements](#future-improvements)
+This repository solves a monthly premium reconciliation problem for insurance partners. It ingests raw JSON transaction files, preserves rerunnable operational history, writes a trusted transactional base table to PostgreSQL, builds warehouse models with dbt, and produces a finance-facing monthly partner premium report with traceability back to raw inputs.
 
-## Overview
-
-Getsafe is an insurance company with a digital operating model. In that environment, finance and accounting teams need trustworthy, reproducible reporting on premium transactions charged on behalf of insurance partners.
-
-This solution implements a focused insurance data workflow:
-
-- ingest raw premium transaction files
-- preserve lineage and replayability
-- standardize and validate records
-- model accepted and rejected transaction paths
-- publish a monthly partner premium aggregate for finance reconciliation
-
-At the container interface, the ETL image exposes two operational commands:
-
-- `full-etl-pipeline` for the end-to-end ingestion and silver load path
-- `gold-export` for exporting the monthly partner premium summary to CSV
-
-The final report is exported as:
-
-```text
-output/gold/monthly_partner_premium_summary.csv
-```
-
-In the local Airflow Compose setup, that same file is visible on the host at:
-
-```text
-airflow/output/gold/monthly_partner_premium_summary.csv
-```
-
-## Design Principles and Tradeoffs
+## Design Highlights
 
 This solution is designed around a small set of principles:
 
@@ -68,13 +18,7 @@ This solution is designed around a small set of principles:
 - auditability over silent data loss
 - simplicity at the current scale over premature distributed complexity
 
-These principles show up directly in the implementation: bronze metadata drives rerun behavior, `created_at` is the primary time source, ETL and dbt responsibilities are separated, and accepted and rejected records are modeled explicitly.
-
-## Business Context
-
-The business use case is monthly reconciliation of premium transactions processed on behalf of insurance partners. The platform handles payment execution, but the premium belongs to the underlying partner, so reporting must be auditable and traceable back to raw transactions.
-
-That is why the pipeline uses a layered design: bronze preserves landed history and metadata, the Python ETL writes a trusted transactional base table to PostgreSQL, and dbt builds the warehouse reporting models that produce the final partner-level monthly report.
+In practice, that means bronze metadata drives rerun behavior, `created_at` is the primary time source, ETL and dbt responsibilities stay separated, and accepted and rejected records remain explicit.
 
 ## Problem Statement
 
@@ -103,63 +47,6 @@ Where:
 - `successful transaction`: a payment completed without failure or reversal
 - `monthly aggregation`: grouping transactions by calendar month for reporting
 
-## Input Data
-
-The main source file is `premium_transactions_data_20250306.json`.
-
-Relevant fields:
-
-- `transaction_id`: unique transaction identifier
-- `created_at`: timestamp of the premium charge
-- `amount`: charged premium amount
-- `currency`: transaction currency
-- `charged_partner`: insurance partner for whom the premium was charged
-- `status`: transaction outcome or processing status
-
-This repository also contains additional sample JSON files in `data/` to exercise incremental load behavior, duplicate handling, and rerun safety.
-
-## File Naming and Timestamp Rules
-
-Filenames are non-authoritative. Event time comes from `created_at`, and filename parsing is used only as a fallback.
-
-The ingestion layer discovers files that:
-
-- contain `premium`
-- contain `transaction`
-- end in `.json`
-
-If a fallback date is needed, the supported filename patterns are `YYYYMMDD` and `YYYY_MM_DD`.
-
-### Dataset and model naming
-
-The naming convention is straightforward:
-
-- raw operational dataset loaded by the ETL: `premium_transaction`
-- warehouse reporting relation built by dbt: `monthly_partner_premiums`
-- exported CSV file: `output/gold/monthly_partner_premium_summary.csv`
-
-Within the dbt layer:
-
-- `stg_` models standardize source-facing shape for downstream reuse
-- intermediate models represent trusted and quality-classified transaction data
-- `fct_` models represent reporting facts
-- `dim_` models represent reporting dimensions
-
-## Expected Output
-
-The main deliverable is a CSV report with the shape:
-
-```text
-partner, month, total_premium
-```
-
-Export locations:
-
-- runtime path inside the task container: `output/gold/monthly_partner_premium_summary.csv`
-- host-visible path in the local Airflow setup: `airflow/output/gold/monthly_partner_premium_summary.csv`
-
-The repository also includes the supporting ETL code, dbt models, Docker assets, tests, and delivery workflow needed to run and assess the solution end to end.
-
 ## Architecture
 
 The repository has one execution flow and two modeling layers:
@@ -177,6 +64,12 @@ Terminology used in this repository:
 - `marts`: dbt dimensional and aggregate reporting outputs
 - `gold export`: the final monthly CSV
 
+### Architectural Diagram
+
+
+<img width="1892" height="1064" alt="image" src="https://github.com/user-attachments/assets/05ea6fbd-1b2d-4635-aa90-f078ea3995aa" />
+
+
 End-to-end flow:
 
 ```text
@@ -190,7 +83,66 @@ Raw JSON files
 
 The important boundary is that the Python layer owns ingestion and durable writes, while the dbt layer owns reporting semantics.
 
-## System Guarantees
+## Detailed Sections
+
+### Input Data
+
+The main source file is `premium_transactions_data_20250306.json`.
+
+Relevant fields:
+
+- `transaction_id`: unique transaction identifier
+- `created_at`: timestamp of the premium charge
+- `amount`: charged premium amount
+- `currency`: transaction currency
+- `charged_partner`: insurance partner for whom the premium was charged
+- `status`: transaction outcome or processing status
+
+This repository also contains additional sample JSON files in `data/` to exercise incremental load behavior, duplicate handling, and rerun safety.
+
+### File Naming and Timestamp Rules
+
+Filenames are non-authoritative. Event time comes from `created_at`, and filename parsing is used only as a fallback.
+
+The ingestion layer discovers files that:
+
+- contain `premium`
+- contain `transaction`
+- end in `.json`
+
+If a fallback date is needed, the supported filename patterns are `YYYYMMDD` and `YYYY_MM_DD`.
+
+### Dataset and Model Naming
+
+The naming convention is straightforward:
+
+- raw operational dataset loaded by the ETL: `premium_transaction`
+- warehouse reporting relation built by dbt: `monthly_partner_premiums`
+- exported CSV file: `output/gold/monthly_partner_premium_summary.csv`
+
+Within the dbt layer:
+
+- `stg_` models standardize source-facing shape for downstream reuse
+- intermediate models represent trusted and quality-classified transaction data
+- `fct_` models represent reporting facts
+- `dim_` models represent reporting dimensions
+
+### Expected Output
+
+The main deliverable is a CSV report with the shape:
+
+```text
+partner, month, total_premium
+```
+
+Export locations:
+
+- runtime path inside the task container: `output/gold/monthly_partner_premium_summary.csv`
+- host-visible path in the local Airflow setup: `airflow/output/gold/monthly_partner_premium_summary.csv`
+
+The repository also includes the supporting ETL code, dbt models, Docker assets, tests, and delivery workflow needed to run and assess the solution end to end.
+
+### System Guarantees
 
 Within the scope of the current design, the system guarantees:
 
@@ -202,9 +154,9 @@ Within the scope of the current design, the system guarantees:
 
 These guarantees are local-batch guarantees. They do not imply distributed exactly-once semantics or support for concurrent writers.
 
-## Technology Choices
+### Technology Choices
 
-### Polars instead of Spark
+#### Polars instead of Spark
 
 The assessment allows any data processing framework. I chose `Polars` because:
 
@@ -215,7 +167,7 @@ The assessment allows any data processing framework. I chose `Polars` because:
 
 Spark would be a stronger fit only once data volume, orchestration complexity, or concurrency meaningfully outgrows the current workload.
 
-### Parquet in Bronze instead of staying on raw JSON
+#### Parquet in Bronze instead of staying on raw JSON
 
 The bronze layer converts landed JSON into parquet rather than repeatedly reading JSON for downstream processing.
 
@@ -229,13 +181,13 @@ That choice is deliberate:
 
 In this repository, raw JSON is the landing and interchange format, while Parquet is the canonical persisted representation used by the bronze layer. That keeps the landed source intact while giving downstream processing a typed, columnar working format that is faster, more predictable, and easier to maintain.
 
-### Database adapter layer
+#### Database adapter layer
 
 The ETL writes through a database adapter layer so pipeline logic stays mostly database-agnostic while adapters can still handle engine-specific behavior.
 
 In the current implementation, the adapters are SQLAlchemy-backed. For this assessment, PostgreSQL is the concrete target because it is easy to run locally with Docker and supports `ON CONFLICT` upserts for rerunnable transactional loads. The PostgreSQL adapter extends the generic write layer with keyed upsert behavior, so corrected records can be merged deterministically instead of only appended or fully replaced.
 
-### dbt for the analytics layer
+#### dbt for the analytics layer
 
 dbt is used for the reporting layer because it provides:
 
@@ -244,7 +196,7 @@ dbt is used for the reporting layer because it provides:
 - auditable accepted/rejected modeling patterns
 - a natural path to production analytics workflows
 
-## Repository Structure
+### Repository Structure
 
 ```text
 premium_pipeline_project_updated/
@@ -298,21 +250,21 @@ Key components:
 - `analytics_premium/models/marts/premium/`: dimensional reporting models, including `monthly_partner_premiums`
 - `analytics_premium/infra/docker/`: dbt container build and runtime assets
 
-## Pipeline Stages
+### Pipeline Stages
 
-### Bronze
+#### Bronze
 
 Raw JSON files are persisted as operational bronze parquet plus metadata for rerunnable processing.
 
-### Trusted Base Table
+#### Trusted Base Table
 
 The Python ETL standardizes transactions and writes the reusable base table to PostgreSQL.
 
-### Analytical Models
+#### Analytical Models
 
-dbt builds the warehouse `staging`, `intermediate`, and `marts` models, culminating in `monthly_partner_premiums` and the final CSV export.
+dbt builds the warehouse `staging`, `intermediate`, and `marts` models on top of that trusted base table.
 
-### Metadata and Traceability
+#### Metadata and Traceability
 
 The solution includes metadata to improve auditability and rerun safety.
 
@@ -322,7 +274,7 @@ Examples:
 - base-table load metadata captures run status and rows written
 - container execution can persist a JSON run summary through `PIPELINE_RUN_RESULT_PATH`
 
-## Failure Modes and Recovery
+### Failure Modes and Recovery
 
 The system is designed to fail in a recoverable way:
 
@@ -334,7 +286,7 @@ The system is designed to fail in a recoverable way:
 
 Recovery is operationally simple: fix the underlying issue, then rerun the pipeline. The metadata model is designed to make that rerun deterministic.
 
-## Observability
+### Observability
 
 The current implementation emphasizes traceability rather than a full production observability stack.
 
@@ -346,9 +298,9 @@ The current implementation emphasizes traceability rather than a full production
 
 A production extension would add freshness metrics, anomaly detection, explicit alerting, and ownership for operational failures.
 
-## Local Setup
+### Local Setup
 
-### Prerequisites
+#### Prerequisites
 
 - Docker
 - Docker Compose
@@ -363,7 +315,7 @@ When you start the local Compose stack, it brings up the core services used by t
 
 The ETL, dbt, and CSV export steps are then run by the Airflow DAG as containers. The stack is already configured to use `airflow/` as the mounted workspace root through `AIRFLOW_HOST_ROOT_DIR`, so the default project layout works without additional host-side setup.
 
-## How to Run
+### How to Run
 
 Airflow is the supported local execution path.
 
@@ -396,7 +348,7 @@ Expected CSV output:
 airflow/output/gold/monthly_partner_premium_summary.csv
 ```
 
-## Container Images
+### Container Images
 
 The local runtime uses three images:
 
@@ -404,11 +356,16 @@ The local runtime uses three images:
 - `idowuilekura/premium-pipeline:latest` runs the ETL and CSV export tasks
 - `idowuilekura/analytics-premium-dbt:latest` runs the dbt transformations
 
-When the local stack is up, Airflow orchestrates the task images in sequence:
+When the local stack is up, Airflow orchestrates the task images that implement the architecture described above:
 
-- `premium-container full-etl-pipeline` runs the pipeline
+- `premium-container full-etl-pipeline` runs the Python ETL
 - the dbt image builds the reporting models
 - `premium-container gold-export` exports `analytics.monthly_partner_premiums` to CSV
+
+The ETL image exposes two operational commands:
+
+- `full-etl-pipeline` for the end-to-end ingestion and trusted-base-table load path
+- `gold-export` for exporting the monthly partner premium summary to CSV
 
 The task images are referenced from `airflow/dags/dags_air.py` and are pulled when the DAG executes.
 
@@ -418,7 +375,7 @@ If the local Docker cache is stale, you can refresh the Airflow service image wi
 docker compose -f airflow/docker-compose.yaml pull
 ```
 
-## dbt Analytics Layer
+### dbt Analytics Layer
 
 The dbt project in `analytics_premium/` is responsible for the warehouse reporting layer after the trusted base table has been loaded into PostgreSQL.
 
@@ -444,17 +401,17 @@ Testing in the dbt layer includes:
 - no-overlap checks on accepted and rejected `sur_key`
 - uniqueness of `(partner, month)` in `monthly_partner_premiums`
 
-## Quality
+### Quality
 
 The repository includes formatting, linting, type-checking, tests, and package-build checks, all enforced in GitHub Actions under `.github/workflows/`.
 
-## Delivery and Release Flow
+### Delivery and Release Flow
 
 Delivery follows a protected-branch workflow: changes land on a feature branch, go through a pull request, and merge into `master`.
 
 `master` is the release source of truth, and `latest` image tags are CI-owned outputs from merged code. The release workflow in `.github/workflows/release.yml` publishes Docker images from `master`, including `sha-<commit>` tags and `latest`.
 
-## Assumptions
+### Assumptions
 
 - Input files are JSON files whose names contain `premium` and `transaction`.
 - `created_at` is the primary event-time field; filename dates are fallback only.
@@ -463,7 +420,7 @@ Delivery follows a protected-branch workflow: changes land on a feature branch, 
 - The business reporting grain is monthly total premium per partner, keyed to the first day of the month.
 - Full schema-evolution handling is out of scope for this version.
 
-## Future Improvements
+### Future Improvements
 
 - add explicit quarantine storage and alerting for invalid insurance transaction rows
 - add fuller end-to-end integration tests across ETL, dbt, and CSV export
