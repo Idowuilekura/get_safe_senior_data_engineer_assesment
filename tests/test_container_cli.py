@@ -101,3 +101,25 @@ def test_send_run_email_command_invokes_email_sender(monkeypatch, capsys) -> Non
     captured = capsys.readouterr()
     assert exit_code == 0
     assert captured.out == ""
+
+
+def test_plan_backfill_command_prints_json(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(container_cli, "configure_logging", lambda: None)
+    monkeypatch.setattr(
+        container_cli,
+        "build_backfill_plan",
+        lambda **_: {
+            "command": "plan-backfill",
+            "requested_months": ["2024-06"],
+            "available_in_bronze": ["2024-06"],
+            "selected_for_backfill": ["2024-06"],
+            "not_available_in_bronze": [],
+            "latest_silver_loaded_months": ["2024-06"],
+        },
+    )
+
+    exit_code = container_cli.main(["plan-backfill", "--from", "2024-06", "--to", "2024-06"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert '"command": "plan-backfill"' in captured.out

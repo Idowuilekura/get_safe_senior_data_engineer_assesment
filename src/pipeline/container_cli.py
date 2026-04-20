@@ -13,6 +13,7 @@ from export.monthly_partner_premium import (
     resolve_gold_relation_name,
 )
 from pipeline.adapters.factory import DatabaseWriterFactory
+from pipeline.backfill.service import build_backfill_plan
 from pipeline.email_report import send_status_email
 from pipeline.logging_config import configure_logging
 from pipeline.orchestration import run_pipeline
@@ -20,6 +21,8 @@ from pipeline.settings import load_pipeline_config_from_env
 from pipeline.types import MetadataDict
 
 DEFAULT_PIPELINE_RUN_RESULT_ENV_VAR = "PIPELINE_RUN_RESULT_PATH"
+DEFAULT_BRONZE_OUTPUT_PATH = "output/bronze"
+DEFAULT_SILVER_METADATA_PATH = "output/silver"
 
 
 def build_full_etl_summary(
@@ -85,6 +88,25 @@ def run_status_email() -> bool:
     return send_status_email()
 
 
+def run_plan_backfill(
+    *,
+    start_month: str,
+    end_month: str,
+    bronze_output_path: str = DEFAULT_BRONZE_OUTPUT_PATH,
+    silver_metadata_path: str = DEFAULT_SILVER_METADATA_PATH,
+) -> dict[str, Any]:
+    configure_logging()
+
+    plan = build_backfill_plan(
+        start_month=start_month,
+        end_month=end_month,
+        bronze_output_path=bronze_output_path,
+        silver_metadata_path=silver_metadata_path,
+    )
+    print(json.dumps(plan, indent=2, sort_keys=True))
+    return plan
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="premium-container",
@@ -112,6 +134,32 @@ def build_parser() -> argparse.ArgumentParser:
         "send-run-email",
         help="Send a status email for the pipeline run when email is configured.",
     )
+    plan_backfill_parser = subparsers.add_parser(
+        "plan-backfill",
+        help="Plan a month-level backfill from available bronze partitions.",
+    )
+    plan_backfill_parser.add_argument(
+        "--from",
+        dest="start_month",
+        required=True,
+        help="Inclusive backfill start month in YYYY-MM format.",
+    )
+    plan_backfill_parser.add_argument(
+        "--to",
+        dest="end_month",
+        required=True,
+        help="Inclusive backfill end month in YYYY-MM format.",
+    )
+    plan_backfill_parser.add_argument(
+        "--bronze-output-path",
+        default=DEFAULT_BRONZE_OUTPUT_PATH,
+        help=f"Bronze output path to inspect. Defaults to {DEFAULT_BRONZE_OUTPUT_PATH!r}.",
+    )
+    plan_backfill_parser.add_argument(
+        "--silver-metadata-path",
+        default=DEFAULT_SILVER_METADATA_PATH,
+        help=f"Silver metadata path to inspect. Defaults to {DEFAULT_SILVER_METADATA_PATH!r}.",
+    )
     return parser
 
 
@@ -129,6 +177,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "send-run-email":
         run_status_email()
+        return 0
+
+    if args.command == "plan-backfill":
+        run_plan_backfill(
+            start_month=args.start_month,
+            end_month=args.end_month,
+            bronze_output_path=args.bronze_output_path,
+            silver_metadata_path=args.silver_metadata_path,
+        )
         return 0
 
     parser.error(f"Unsupported command: {args.command}")

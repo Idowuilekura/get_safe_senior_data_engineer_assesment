@@ -1,8 +1,24 @@
 # Premium Reconciliation Pipeline
 
-Production-style solution for the Getsafe Senior Data Engineer case study.
+Local batch pipeline for auditable monthly premium reconciliation.
 
-This repository implements a local batch pipeline that ingests raw JSON premium transactions, persists a rerunnable bronze layer in Parquet, loads a trusted transaction table into a SQL database, models accepted and rejected rows in dbt, and exports a monthly partner premium report to CSV.
+The implementation is intentionally narrow in scope: local, sequential, and optimized for reruns, traceability, and clear failure boundaries rather than distributed scale. It ingests raw JSON premium transactions, persists a rerunnable bronze layer in Parquet, loads a trusted transaction table into PostgreSQL, models accepted and rejected records in dbt, and exports a monthly partner premium report to CSV.
+
+## Design Intent
+
+This system is designed for a single-node monthly reconciliation workflow where the main priorities are:
+
+- deterministic reruns
+- explicit accepted and rejected record handling
+- auditable transformation boundaries
+- low operational complexity for local execution
+
+It is not optimized for:
+
+- streaming latency
+- concurrent writers
+- distributed compute
+- enterprise-grade orchestration controls
 
 ## Output
 
@@ -29,16 +45,17 @@ Business rules applied to the exported report:
 - `processed` rows with `amount <= 0` are treated as reconciliation exceptions and routed to the rejected path rather than counted as earned premium.
 - Low positive premiums remain valid. The case study does not impose a minimum-positive-amount rejection threshold.
 
+## Design Trade-Offs
+
+- Polars is used for ingestion because the dataset fits comfortably in memory and the local development model benefits more from low setup overhead than from distributed execution.
+- Bronze data is persisted in Parquet rather than read repeatedly from raw JSON so reruns benefit from columnar reads, stable schema handling, and inexpensive partition rebuilds.
+- PostgreSQL is used as the trusted relational layer because it provides a simple audited handoff into dbt without introducing warehouse-specific complexity into the ingestion code.
+- Accepted and rejected paths are modeled explicitly in dbt rather than filtered silently in ETL so reporting remains auditable and data-quality decisions stay inspectable in SQL.
+- FX conversion uses one documented 2024 reference rate rather than a daily historical lookup because all sample business timestamps are in 2024 and the additional ingestion path would add more operational surface area than analytical value for this exercise.
+
 ## Architecture
 
-```mermaid
-flowchart LR
-    A["Raw JSON files"] --> B["Bronze parquet + metadata"]
-    B --> C["Trusted transaction table"]
-    C --> D["dbt models"]
-    D --> E["analytics.monthly_partner_premiums"]
-    E --> F["CSV export"]
-```
+![Premium pipeline architecture](https://github.com/user-attachments/assets/27c7eadc-7829-4848-be9d-61082eda0dd4)
 
 Pipeline stages:
 
@@ -47,7 +64,7 @@ Pipeline stages:
 3. dbt models classify accepted and rejected rows, then build dimensional and reporting models.
 4. Export reads the EUR-normalized `analytics.monthly_partner_premiums` mart and writes `monthly_partner_premium_summary.csv`.
 
-## Operational Guarantees
+## System Guarantees
 
 - Payload event time is authoritative. File discovery and partition impact detection prefer `created_at`; filename date parsing is only a fallback.
 - Bronze ingestion is metadata-driven. Seen file content is tracked with content digests, file size, and modified time.
@@ -58,9 +75,9 @@ Pipeline stages:
 - The main exported mart normalizes GBP amounts to EUR using a single fixed 2024 ECB annual-average rate.
 - A companion mart preserves monthly totals split by source currency for auditability.
 
-Operational scope:
+Execution scope:
 
-- The ETL defaults to `replace` mode for database writes.
+- The ETL defaults to `replace` mode for database writes. In this implementation, that is intentional: when new bronze data exists, the trusted transaction table is rebuilt from the current bronze state before dbt runs. At this scale, deterministic rebuilds are simpler to reason about than incremental silver maintenance and reduce partial-staleness risk in the trusted base layer.
 - PostgreSQL `upsert` behaviour is available, but only when `PIPELINE_DATABASE_WRITE_MODE=upsert` and `PIPELINE_MERGE_KEYS` are configured.
 - Concurrent writers are not coordinated by the codebase. Run this pipeline sequentially.
 
@@ -135,7 +152,11 @@ Quality policy:
 
 ### Option 1: Airflow Stack
 
-This is the closest thing to the end-to-end intended demo flow.
+This is the primary end-to-end execution path for the repository.
+
+Airflow task graph:
+
+![Airflow DAG graph view](https://github.com/user-attachments/assets/afa001c2-734d-4639-88fd-09d443d04e8e)
 
 1. Review `airflow/.env` before running the stack.
 2. Put input files in `airflow/data/`.
@@ -146,7 +167,7 @@ docker compose -f airflow/docker-compose.yaml up airflow-init
 docker compose -f airflow/docker-compose.yaml up -d
 ```
 
-4. Open Airflow at `http://localhost:8081`.
+4. Open Airflow at `http://localhost:8080`.
 5. Trigger the `premium_pipeline` DAG.
 6. Read the final CSV from `airflow/output/gold/monthly_partner_premium_summary.csv`.
 
@@ -213,6 +234,23 @@ The package exposes three entrypoints:
 - `full-etl-pipeline`
 - `gold-export`
 - `send-run-email`
+- `plan-backfill`
+
+`plan-backfill` is a read-only month-level planner. It scans available bronze partitions on disk, compares them to a requested month range, and reports:
+
+- requested months
+- months available in bronze
+- months selected for backfill
+- months not available in bronze
+- months loaded by the latest successful silver run
+
+Example:
+
+```bash
+uv run premium-container plan-backfill --from 2024-01 --to 2025-12
+```
+
+The planner intentionally uses bronze partitions as the source of truth for availability and does not infer month availability from source filenames.
 
 ## Configuration
 
@@ -253,28 +291,53 @@ uv run pytest
 uv build
 ```
 
-## Explicit Assumptions
+## Troubleshooting
 
-FX assumption used in this case study:
+| Symptom | Likely Cause | What To Do |
+| --- | --- | --- |
+| `airflow-apiserver` is unhealthy | The running container is still using an outdated healthcheck or the stack was not recreated after Compose changes | Restart the affected Airflow services or recreate the stack with `docker compose -f airflow/docker-compose.yaml down` followed by `docker compose -f airflow/docker-compose.yaml up -d` |
+| dbt fails with `Credentials in profile ... invalid` | The dbt container is running with stale or incomplete connection environment variables | Restart `airflow-scheduler`, `airflow-dag-processor`, `airflow-worker`, and `airflow-apiserver` so the latest DAG configuration is loaded |
+| The DAG runs but no rows are newly ingested | Bronze ingestion deduplicates source files by content digest, so identical payloads are treated as already processed | Add a genuinely new file or intentionally correct an existing file and rerun the pipeline |
+| Status email is not sent | SMTP settings are incomplete or the mail provider rejected authentication | Verify the `PIPELINE_EMAIL_*` settings in `airflow/.env`; for Gmail, use an app password rather than a primary account password |
+| Airflow or Postgres does not start on the expected host port | Another local service is already bound to `8080` or `5432` | Stop the conflicting service or change the host-side port mapping in `airflow/docker-compose.yaml` |
+
+## Operational Expectations
+
+- Intended for scheduled batch execution with operator review of Airflow task state and email notifications.
+- The repository includes basic run-status email alerts for success and failure outcomes.
+- It does not implement formal SLA/SLO tracking, paging escalation, or on-call support.
+- Recovery is based on deterministic reruns after the underlying issue is corrected.
+
+## Business Assumptions
+
+FX assumption:
 
 - GBP amounts are normalized with the 2024 ECB annual average series `EXR.A.GBP.EUR.SP00.A` = `0.8466166015625` GBP per EUR.
 - Equivalent practical conversion in the mart: `1 GBP ≈ 1.1811722073 EUR`.
 - Because all business timestamps in the provided sample fall in 2024, the repository uses one documented 2024 reference rate instead of introducing a separate historical FX ingestion workflow.
 
-Amount-quality assumption used in this case study:
+Amount-quality assumption:
 
 - Non-positive `processed` amounts are modeled as reconciliation exceptions rather than earned premium.
-- This is a deliberate reporting assumption for the assessment, not a claim that insurance premiums can never be zero in all commercial contexts.
+- This is a deliberate reporting assumption for this repository, not a claim that insurance premiums can never be zero in all commercial contexts.
 - Public Getsafe pricing shows that positive low-value premiums are plausible, so the pipeline does not reject low positive amounts by threshold alone.
 - The sample data supports this cutoff: there are no zero-value rows, while the only non-positive rows are three negative `processed` transactions.
 
-## Known Limitations
+## Operational Limitations
 
 - No explicit concurrency control exists for bronze metadata or database writes.
-- No dedicated backfill CLI is implemented.
+- Backfill planning is implemented at month grain through bronze partition inspection, but there is not yet a mutating backfill execution command.
 - Late-arriving records are handled on the next run; there is no separate late-data workflow.
 - The export step assumes the dbt gold relation already exists.
 - Bronze timestamp enrichment expects the sample-style `created_at` format used by this dataset.
+
+## If This Moved To Production
+
+The first changes I would make are:
+
+- move bronze and silver run metadata from filesystem state into a transactional metadata store
+- replace the fixed FX assumption with provider-tracked historical reference data joined by business date
+- add orchestration safeguards around concurrency, alerting, and failure recovery rather than relying on sequential local execution discipline
 
 ## Development Notes
 
@@ -284,4 +347,4 @@ Amount-quality assumption used in this case study:
 
 ## Summary
 
-This codebase is strongest as a small, auditable, single-node batch pipeline. It prioritizes rerunnable ingestion, explicit data quality handling, and a clean separation between operational ETL and analytical modeling without pretending to be a distributed platform.
+This codebase is intentionally designed as a small, auditable, single-node batch system. The strongest parts of the design are rerunnable ingestion, explicit accepted and rejected data paths, and clear separation between operational ETL and analytical modeling. It does not claim distributed-scale guarantees, cross-run concurrency control, or a fully generalized reconciliation platform.
