@@ -13,6 +13,7 @@ if str(AIRFLOW_SUPPORT_ROOT) not in sys.path:
 
 from utils.premium_pipeline_utils import (
     build_docker_task,
+    collect_email_context,
     collect_pipeline_result,
     db_environment,
     dbt_environment,
@@ -75,7 +76,18 @@ with DAG(
         trigger_rule="all_done",
     )
 
+    collect_email_context_task = PythonOperator(
+        task_id="collect_email_context",
+        python_callable=collect_email_context,
+        trigger_rule="all_done",
+    )
+
     prepare_output >> run_pipeline >> collect_pipeline_result_task >> continue_downstream_processing
     continue_downstream_processing >> run_dbt >> run_csv_export
-    continue_downstream_processing >> send_status_email
-    run_csv_export >> send_status_email
+    [
+        run_pipeline,
+        continue_downstream_processing,
+        run_dbt,
+        run_csv_export,
+    ] >> collect_email_context_task
+    collect_email_context_task >> send_status_email

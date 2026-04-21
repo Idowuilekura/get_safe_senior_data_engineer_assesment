@@ -109,18 +109,16 @@ email_environment = {
     "PIPELINE_EMAIL_DAG_ID": "{{ dag.dag_id }}",
     "PIPELINE_EMAIL_RUN_ID": "{{ run_id }}",
     "PIPELINE_EMAIL_PIPELINE_STATE": (
-        "{{ dag_run.get_task_instance('run_premium_pipeline').state if dag_run else 'unknown' }}"
+        "{{ ti.xcom_pull(task_ids='collect_email_context', key='pipeline_state') or 'unknown' }}"
     ),
     "PIPELINE_EMAIL_DBT_STATE": (
-        "{{ dag_run.get_task_instance('run_dbt_export').state if dag_run else 'unknown' }}"
+        "{{ ti.xcom_pull(task_ids='collect_email_context', key='dbt_state') or 'unknown' }}"
     ),
     "PIPELINE_EMAIL_EXPORT_STATE": (
-        "{{ dag_run.get_task_instance('run_csv_export').state if dag_run else 'unknown' }}"
+        "{{ ti.xcom_pull(task_ids='collect_email_context', key='export_state') or 'unknown' }}"
     ),
     "PIPELINE_EMAIL_EXPORT_PATH": (
-        "{{ '" + host_export_path + "' "
-        "if dag_run and dag_run.get_task_instance('run_csv_export').state == 'success' "
-        "else '' }}"
+        "{{ ti.xcom_pull(task_ids='collect_email_context', key='export_path') or '' }}"
     ),
 }
 
@@ -189,6 +187,36 @@ def should_continue_downstream_processing(ti):
         key="docker_output",
     )
     return str(docker_output).strip().lower() == "true"
+
+
+def collect_email_context(ti):
+    """Collect task-state context for the status email task.
+
+    Args:
+        ti: Current Airflow task instance.
+
+    Returns:
+        Dictionary containing task states and the host-visible export path.
+    """
+    dag_run = ti.get_dagrun()
+
+    def _state(task_id: str) -> str:
+        task_instance = dag_run.get_task_instance(task_id)
+        if task_instance is None or task_instance.state is None:
+            return "unknown"
+        return str(task_instance.state)
+
+    context = {
+        "pipeline_state": _state("run_premium_pipeline"),
+        "dbt_state": _state("run_dbt_export"),
+        "export_state": _state("run_csv_export"),
+        "export_path": host_export_path if _state("run_csv_export") == "success" else "",
+    }
+
+    for key, value in context.items():
+        ti.xcom_push(key=key, value=value)
+
+    return context
 
 
 def build_docker_task(
